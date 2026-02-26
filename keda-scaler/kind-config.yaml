@@ -1,0 +1,11 @@
+# Kind cluster config for the QfK autoscaling demo.
+# Reduces the HPA sync period from the default 15s to 5s so KEDA
+# scale-down decisions take effect faster.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+kubeadmConfigPatches:
+  - |
+    kind: ClusterConfiguration
+    controllerManager:
+      extraArgs:
+        horizontal-pod-autoscaler-sync-period: "5s"

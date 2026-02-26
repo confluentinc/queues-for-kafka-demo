@@ -1,0 +1,18 @@
+# ClusterIP service exposing the lag exporter's Prometheus metrics endpoint.
+# Prometheus discovers this via ServiceMonitor or pod annotations.
+apiVersion: v1
+kind: Service
+metadata:
+  name: qfk-lag-exporter
+  namespace: qfk-autoscaling-demo
+  labels:
+    app: qfk-lag-exporter
+spec:
+  type: ClusterIP
+  selector:
+    app: qfk-lag-exporter
+  ports:
+    - port: 9400
+      targetPort: 9400
+      protocol: TCP
+      name: metrics

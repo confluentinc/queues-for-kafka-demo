@@ -1,0 +1,54 @@
+# QfK Lag Exporter — Prometheus exporter that reports share group backlog.
+# Uses Kafka AdminClient (AK 4.2+) against Confluent Cloud (SASL_SSL + PLAIN)
+# for near real-time lag data. Prometheus scrapes this, KEDA queries Prometheus.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qfk-lag-exporter
+  namespace: qfk-autoscaling-demo
+  labels:
+    app: qfk-lag-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: qfk-lag-exporter
+  template:
+    metadata:
+      labels:
+        app: qfk-lag-exporter
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9400"
+    spec:
+      containers:
+        - name: exporter
+          image: qfk-lag-exporter:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 9400
+              name: metrics
+          envFrom:
+            - configMapRef:
+                name: qfk-config
+            - secretRef:
+                name: ccloud-credentials
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: 9400
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: 9400
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi

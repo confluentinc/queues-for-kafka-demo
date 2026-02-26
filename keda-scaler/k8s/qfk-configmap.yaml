@@ -1,0 +1,11 @@
+# Non-secret configuration for the QfK lag exporter and consumers.
+# REPLACE KAFKA_BOOTSTRAP_SERVERS with your Confluent Cloud bootstrap endpoint.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: qfk-config
+  namespace: qfk-autoscaling-demo
+data:
+  KAFKA_BOOTSTRAP_SERVERS: "REPLACE_ME:9092"
+  QFK_SHARE_GROUP_ID: "chefs-share-group"
+  QFK_TOPIC_NAME: "orders-queue"

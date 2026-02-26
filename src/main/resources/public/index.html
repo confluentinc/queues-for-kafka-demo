@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Restaurant Demo Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🍽️ Restaurant Demo Dashboard</h1>
+            <p class="subtitle">Real-time Analytics & Queue Monitoring</p>
+            <div class="header-actions">
+                <button id="generate-orders-btn" class="action-btn generate-btn">
+                    🚀 Generate 40 Orders
+                </button>
+                <button id="restock-btn" class="action-btn restock-btn">
+                    📦 Restock Inventory
+                </button>
+            </div>
+        </header>
+
+        <div class="dashboard-grid">
+            <!-- Inventory Section -->
+            <section class="inventory-section">
+                <h2>📦 Inventory Status</h2>
+                <div id="inventory-container" class="inventory-grid">
+                    <!-- Inventory items will be populated here -->
+                </div>
+            </section>
+
+            <!-- Chefs Section -->
+            <section class="chefs-section">
+                <h2>👨‍🍳 Chef Consumers</h2>
+                <div id="chefs-container" class="chefs-grid">
+                    <!-- Chef statuses will be populated here -->
+                </div>
+            </section>
+
+            <!-- Auto-Scaling Section -->
+            <section class="autoscale-section">
+                <h2>🤖 Auto-Scaling Status</h2>
+                <div id="autoscale-container" class="autoscale-info">
+                    <!-- Auto-scaling status will be populated here -->
+                </div>
+            </section>
+        </div>
+
+        <footer>
+            <p>Last updated: <span id="last-update">Never</span></p>
+        </footer>
+    </div>
+
+    <script src="dashboard.js"></script>
+</body>
+</html>
+

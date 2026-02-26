@@ -1,0 +1,12 @@
+# Optional overrides — copy this file to terraform.tfvars to customise.
+#
+# Terraform will prompt you for the Confluent Cloud API key and secret
+# at apply time. No need to store credentials in a file.
+
+# Cloud provider and region for the Enterprise cluster.
+# Enterprise clusters are required for Queues for Kafka (share groups).
+cloud_provider = "AWS"
+cloud_region   = "us-east-2"
+
+# Prefix for all resource names (environment, cluster, service account, etc.)
+prefix = "qfk-demo"
