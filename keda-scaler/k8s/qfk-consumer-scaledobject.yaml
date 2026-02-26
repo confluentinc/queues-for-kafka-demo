@@ -1,0 +1,36 @@
+# KEDA ScaledObject — queries Prometheus for share group backlog, scales consumers.
+# KEDA applies:  desired_replicas = ceil(queryResult / threshold)
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: qfk-consumer-scaledobject
+  namespace: qfk-autoscaling-demo
+spec:
+  scaleTargetRef:
+    name: qfk-consumer
+  minReplicaCount: 1
+  maxReplicaCount: 4
+  pollingInterval: 1
+  cooldownPeriod: 5
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 0
+          policies:
+            - type: Pods
+              value: 4
+              periodSeconds: 1
+        scaleDown:
+          stabilizationWindowSeconds: 5
+          policies:
+            - type: Percent
+              value: 100
+              periodSeconds: 1
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: "http://prometheus-server.monitoring.svc.cluster.local:80"
+        query: qfk_share_group_backlog{share_group="chefs-share-group"}
+        threshold: "4"
+        metricType: AverageValue

@@ -1,0 +1,9 @@
+# Terraform state — contains secrets (API keys), never commit
+*.tfstate
+*.tfstate.backup
+.terraform/
+.terraform.lock.hcl
+
+# User-specific variable files
+terraform.tfvars
+*.auto.tfvars

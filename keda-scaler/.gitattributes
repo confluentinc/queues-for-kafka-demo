@@ -1,0 +1,10 @@
+# Force LF line endings for files that must not have CRLF.
+# Without this, Windows users with core.autocrlf=true will get CRLF
+# in Dockerfiles, which breaks RUN commands (\r appended to arguments).
+
+Dockerfile        text eol=lf
+Dockerfile.*      text eol=lf
+*.proto           text eol=lf
+*.sh              text eol=lf
+*.yaml            text eol=lf
+*.yml             text eol=lf

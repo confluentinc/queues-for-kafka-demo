@@ -1,0 +1,33 @@
+.claude/
+.vscode/
+.idea/
+*.iml
+__pycache__/
+target/
+vol/
+kafka-data/
+bin/
+lib/
+
+.DS_Store
+*.pyc
+*.class
+
+# Environment and secrets
+.env
+.env.local
+.env.*.local
+
+# Credentials and keys
+*.pem
+*.key
+credentials.json
+
+# Maven shade plugin artifact
+dependency-reduced-pom.xml
+
+# Local files
+notes.txt
+instructions.md
+docker*.yml
+dashboard-state.json

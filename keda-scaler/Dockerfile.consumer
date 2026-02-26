@@ -1,0 +1,23 @@
+# Containerizes the existing QConsumer from the root project WITHOUT modifying it.
+# Build from the repo root:
+#   docker build -f keda-scaler/Dockerfile.consumer -t my-qfk-consumer:latest .
+
+# --- Stage 1: Build ---
+FROM maven:3.9-eclipse-temurin-17 AS build
+WORKDIR /app
+# Copy root project files
+COPY pom.xml .
+COPY src ./src
+# Compile and copy dependencies into target/dependency/
+RUN mvn clean compile dependency:copy-dependencies -DincludeScope=runtime -B
+
+# --- Stage 2: Runtime ---
+FROM eclipse-temurin:17-jre
+WORKDIR /app
+COPY --from=build /app/target/classes ./classes
+COPY --from=build /app/target/dependency ./dependency
+
+# QConsumer expects the chef name as the first argument.
+# Override with: docker run my-qfk-consumer:latest "Chef Bob"
+ENTRYPOINT ["java", "-cp", "classes:dependency/*", "com.example.qtest.QConsumer"]
+CMD ["KEDA-Chef"]

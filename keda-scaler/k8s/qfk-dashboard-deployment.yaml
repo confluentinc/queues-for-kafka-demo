@@ -1,0 +1,74 @@
+# QfK Dashboard — web UI for monitoring chefs, inventory, and KEDA scaling.
+# Runs the DashboardServer in KEDA mode (no local ChefAutoScaler).
+# Consumer pods report their status here via DASHBOARD_URL.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qfk-dashboard
+  namespace: qfk-autoscaling-demo
+  labels:
+    app: qfk-dashboard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: qfk-dashboard
+  template:
+    metadata:
+      labels:
+        app: qfk-dashboard
+    spec:
+      containers:
+        - name: qfk-dashboard
+          image: my-qfk-dashboard:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: KEDA_MODE
+              value: "true"
+            - name: PROMETHEUS_URL
+              value: "http://prometheus-server.monitoring.svc.cluster.local:80"
+            - name: AUTO_SCALE_ENABLED
+              value: "false"
+            - name: KEDA_THRESHOLD
+              value: "5"
+            - name: KEDA_MIN_REPLICAS
+              value: "1"
+            - name: KEDA_MAX_REPLICAS
+              value: "4"
+            - name: BOOTSTRAP_SERVERS
+              valueFrom:
+                configMapKeyRef:
+                  name: qfk-config
+                  key: KAFKA_BOOTSTRAP_SERVERS
+            - name: CONFLUENT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ccloud-credentials
+                  key: KAFKA_API_KEY
+            - name: CONFLUENT_API_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: ccloud-credentials
+                  key: KAFKA_API_SECRET
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
