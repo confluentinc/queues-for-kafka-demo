@@ -85,7 +85,7 @@ public class KProducer {
             System.err.println();
             System.err.println("   For Local Kafka (Docker):");
             System.err.println("   1. Make sure Kafka is running:");
-            System.err.println("      docker run --name kafka_qfk --rm -p 9092:9092 apache/kafka:4.1.1");
+            System.err.println("      docker run --name kafka_qfk --rm -p 9092:9092 apache/kafka:4.2.0");
             System.err.println();
             System.err.println("   2. Create the topic:");
             System.err.println("      docker exec -it kafka_qfk sh");
