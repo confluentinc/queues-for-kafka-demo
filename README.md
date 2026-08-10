@@ -13,6 +13,10 @@ This demo (based on [ifnesi's original](https://github.com/ifnesi/queues-for-kaf
 
 ![image](docs/dashboard-demo.png)
 
+## Do you prefer Python?
+
+Check out the [Python version of this demo](queues-for-kafka-demo-python/README.md), which implements the same waiters/chefs/inventory-tracker scenario using `confluent-kafka-python` instead of the Java client.
+
 
 ## Prerequisites
 
