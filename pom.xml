@@ -17,14 +17,14 @@
     <dependency>
       <groupId>org.apache.kafka</groupId>
       <artifactId>kafka-clients</artifactId>
-      <version>4.2.0</version>
+      <version>4.3.1</version>
     </dependency>
 
     <!-- Logging backend for SLF4J (logback-classic includes slf4j-api) -->
     <dependency>
       <groupId>ch.qos.logback</groupId>
       <artifactId>logback-classic</artifactId>
-      <version>1.4.14</version>
+      <version>1.6.2</version>
     </dependency>
 
     <!-- Jackson for JSON processing -->
@@ -48,7 +48,7 @@
       <plugin>
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>exec-maven-plugin</artifactId>
-        <version>3.1.0</version>
+        <version>3.6.3</version>
       </plugin>
     </plugins>
   </build>
