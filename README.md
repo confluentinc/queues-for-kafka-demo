@@ -121,6 +121,12 @@ docker exec -it kafka_qfk sh -c "
 `DlqConsumer` (see [Reading the DLQ](#reading-the-dlq) below) reads either way: it always prints
 the context headers, and additionally prints the original order when its payload was copied.
 
+**Set this before any chef connects.** The DLQ config does not apply retroactively to a share
+group that's already active — if `chefs-share-group` already has consumers running when you set
+`errors.deadletterqueue.topic.name`, rejected orders keep disappearing with no error and no DLQ
+record, even though `kafka-configs.sh --describe` shows the config is set. If you already started
+chefs, stop them first so the group empties, then start them again after configuring the DLQ.
+
 </details>
 
 ### 2. Compile the project

@@ -201,8 +201,7 @@ async function updateDashboard() {
         await Promise.all([
             updateInventory(),
             updateChefs(),
-            updateAutoScale(),
-            updateDlq()
+            updateAutoScale()
         ]);
         updateLastUpdateTime();
     } catch (error) {
@@ -348,11 +347,17 @@ function updateLastUpdateTime() {
 
 async function updateAutoScale() {
     try {
-        const response = await fetch(`${API_BASE}/api/autoscale`);
-        if (!response.ok) throw new Error('Failed to fetch auto-scale status');
-        
-        const autoscaleData = await response.json();
-        renderAutoScale(autoscaleData);
+        const [autoscaleResponse, dlqResponse] = await Promise.all([
+            fetch(`${API_BASE}/api/autoscale`),
+            fetch(`${API_BASE}/api/dlq/records`)
+        ]);
+        if (!autoscaleResponse.ok) throw new Error('Failed to fetch auto-scale status');
+        if (!dlqResponse.ok) throw new Error('Failed to fetch DLQ records');
+
+        const autoscaleData = await autoscaleResponse.json();
+        updateDlqRecords(await dlqResponse.json());
+        renderAutoScale(autoscaleData, dlqRecords.length);
+        renderDlqInspector();
     } catch (error) {
         console.error('Error fetching auto-scale status:', error);
         // Show error in UI
@@ -363,7 +368,19 @@ async function updateAutoScale() {
     }
 }
 
-function renderAutoScale(data) {
+function updateDlqRecords(newRecords) {
+    // Keep the inspector pointed at the same record (by dlqOffset) across refreshes.
+    const currentOffset = dlqRecords[dlqIndex] ? dlqRecords[dlqIndex].dlqOffset : undefined;
+    dlqRecords = newRecords;
+    if (dlqRecords.length === 0) {
+        dlqIndex = 0;
+    } else {
+        const sameOffsetIndex = dlqRecords.findIndex(r => r.dlqOffset === currentOffset);
+        dlqIndex = sameOffsetIndex >= 0 ? sameOffsetIndex : dlqRecords.length - 1;
+    }
+}
+
+function renderAutoScale(data, dlqCount) {
     const container = document.getElementById('autoscale-container');
     if (!container) {
         console.warn('autoscale-container not found in DOM');
@@ -388,6 +405,8 @@ function renderAutoScale(data) {
     const depthClass = queueDepth >= 4 ? 'high-queue' : queueDepth >= 2 ? 'medium-queue' : 'low-queue';
     const scalingStatus = activeChefs < targetChefs ? 'scaling-up' : activeChefs > targetChefs ? 'scaling-down' : 'stable';
     const rejectedClass = rejectedOrders > 0 ? 'rejected-orders' : '';
+    const dlqCountValue = dlqCount !== undefined ? dlqCount : 0;
+    const dlqClass = dlqCountValue > 0 ? 'rejected-orders' : '';
 
     // Manual scaling buttons (only shown in manual mode, not KEDA mode)
     const manualControls = manualMode && !kedaMode ? `
@@ -445,6 +464,11 @@ function renderAutoScale(data) {
                 <div class="stat-value">${rejectedOrders}</div>
                 <div class="stat-description">Rejected</div>
             </div>
+            <div class="stat-card ${dlqClass}">
+                <div class="stat-label">DLQ Records</div>
+                <div class="stat-value">${dlqCountValue}</div>
+                <div class="stat-description">Landed in the dead-letter queue</div>
+            </div>
         </div>
         ${manualControls}
         ${chefNames.length > 0 ? `
@@ -464,61 +488,6 @@ function escapeHtml(value) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
-}
-
-async function updateDlq() {
-    try {
-        const [countResponse, recordsResponse] = await Promise.all([
-            fetch(`${API_BASE}/api/dlq/count`),
-            fetch(`${API_BASE}/api/dlq/records`)
-        ]);
-        if (!countResponse.ok) throw new Error('Failed to fetch DLQ count');
-        if (!recordsResponse.ok) throw new Error('Failed to fetch DLQ records');
-
-        const countData = await countResponse.json();
-        const newRecords = await recordsResponse.json();
-
-        // Keep the inspector pointed at the same record (by dlqOffset) across refreshes.
-        const currentOffset = dlqRecords[dlqIndex] ? dlqRecords[dlqIndex].dlqOffset : undefined;
-        dlqRecords = newRecords;
-        if (dlqRecords.length === 0) {
-            dlqIndex = 0;
-        } else {
-            const sameOffsetIndex = dlqRecords.findIndex(r => r.dlqOffset === currentOffset);
-            dlqIndex = sameOffsetIndex >= 0 ? sameOffsetIndex : dlqRecords.length - 1;
-        }
-
-        renderDlqStats(countData);
-        renderDlqInspector();
-    } catch (error) {
-        console.error('Error fetching DLQ data:', error);
-        const container = document.getElementById('dlq-stats-container');
-        if (container) {
-            container.innerHTML = '<div class="loading">Error loading DLQ status</div>';
-        }
-    }
-}
-
-function renderDlqStats(countData) {
-    const container = document.getElementById('dlq-stats-container');
-    if (!container) return;
-
-    const dlqCount = countData.count !== undefined ? countData.count : 0;
-    const rejectedCount = countData.rejected !== undefined ? countData.rejected : 0;
-    const dlqClass = dlqCount > 0 ? 'rejected-orders' : '';
-
-    container.innerHTML = `
-        <div class="stat-card ${dlqClass}">
-            <div class="stat-label">DLQ Records</div>
-            <div class="stat-value">${dlqCount}</div>
-            <div class="stat-description">Total landed in the dead-letter queue</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-label">Rejected Orders</div>
-            <div class="stat-value">${rejectedCount}</div>
-            <div class="stat-description">Explicit Reject acks only</div>
-        </div>
-    `;
 }
 
 function renderDlqInspector() {

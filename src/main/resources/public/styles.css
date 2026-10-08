@@ -476,13 +476,6 @@ footer {
     grid-column: 1 / -1;
 }
 
-.dlq-stats {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 20px;
-    margin-bottom: 20px;
-}
-
 .dlq-inspector {
     background: white;
     border-radius: 10px;
