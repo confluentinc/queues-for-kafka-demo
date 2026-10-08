@@ -72,20 +72,54 @@ cd ..
 
 No Confluent Cloud account? You can run against a local broker instead (some QfK features are Confluent Cloud-only).
 
+This demo currently runs against `apache/kafka:4.4.0-rc4`, an Apache Kafka 4.4.0 release
+candidate, so that the dead-letter queue steps below work ahead of the AK 4.4 GA. Once AK 4.4
+ships, this tag should be bumped to the GA image (e.g. `apache/kafka:4.4.0`).
+
 ```bash
-docker run --name kafka_qfk --rm -p 9092:9092 apache/kafka:4.2.0
+docker run --name kafka_qfk --rm -p 9092:9092 apache/kafka:4.4.0-rc4
 ```
 
 In a new terminal, enable share groups and create the topic:
 
 ```bash
 docker exec -it kafka_qfk sh -c "
-  /opt/kafka/bin/kafka-features.sh --bootstrap-server localhost:9092 upgrade --feature share.version=1 &&
+  /opt/kafka/bin/kafka-features.sh --bootstrap-server localhost:9092 upgrade --feature share.version=2 &&
   /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --topic orders-queue --partitions 1
 "
 ```
 
 No environment variables needed — the demo defaults to `localhost:9092`.
+
+#### Dead-letter queue (DLQ) setup
+
+[KIP-1191](https://cwiki.apache.org/confluence/display/KAFKA/KIP-1191%3A+Dead-letter+queues+for+share+groups)
+adds dead-letter queue support for share groups, targeted at AK 4.4. A rejected order, or one
+that exhausts its delivery attempts, is written to a DLQ topic instead of just disappearing.
+`share.version=2` (enabled above) turns this on.
+
+Create a DLQ topic, mark it as a valid DLQ destination, and point `chefs-share-group` at it:
+
+```bash
+docker exec -it kafka_qfk sh -c "
+  /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --topic dlq.orders-queue --partitions 1 &&
+  /opt/kafka/bin/kafka-configs.sh --bootstrap-server localhost:9092 --alter --entity-type topics --entity-name dlq.orders-queue --add-config errors.deadletterqueue.group.enable=true &&
+  /opt/kafka/bin/kafka-configs.sh --bootstrap-server localhost:9092 --alter --entity-type groups --entity-name chefs-share-group --add-config errors.deadletterqueue.topic.name=dlq.orders-queue
+"
+```
+
+By default, DLQ records carry only context headers (topic, partition, offset, group, delivery
+count, rejection reason) — not the original order. To also copy the original order onto the DLQ
+record, set the group's `errors.deadletterqueue.copy.record.enable` config:
+
+```bash
+docker exec -it kafka_qfk sh -c "
+  /opt/kafka/bin/kafka-configs.sh --bootstrap-server localhost:9092 --alter --entity-type groups --entity-name chefs-share-group --add-config errors.deadletterqueue.copy.record.enable=true
+"
+```
+
+`DlqConsumer` (see [Reading the DLQ](#reading-the-dlq) below) reads either way: it always prints
+the context headers, and additionally prints the original order when its payload was copied.
 
 </details>
 
@@ -107,6 +141,20 @@ Open http://localhost:8080 and you'll see an empty kitchen, no orders yet.
 
 On the dashboard, click the "Generate 40 Orders" button. The producer fires off 40 orders immediately to flood the kitchen, then keeps a steady stream going. Now, on the dashboard, you'll see chefs spin up to handle the backlog, then scale back down as the queue drains.
 
+### 5. Reading the DLQ
+
+If you completed the [local Docker DLQ setup](#dead-letter-queue-dlq-setup) above, rejected and
+expired orders land on `dlq.orders-queue` instead of disappearing. Read them with:
+
+```bash
+mvn exec:java -Dexec.mainClass=com.example.qtest.DlqConsumer
+```
+
+This prints each DLQ record's context headers (original topic/partition/offset, the group,
+delivery count, and rejection reason). If the group also has
+`errors.deadletterqueue.copy.record.enable=true` set, it additionally prints the original order
+that was copied onto the DLQ record.
+
 
 ## What to Look For
 
@@ -118,7 +166,7 @@ Share groups give consumers four ways to handle a message, which is new for Kafk
 |--------|--------------|
 | **Accept** | Done — message is acknowledged and leaves the queue |
 | **Release** | Put it back — another consumer will pick it up |
-| **Reject** | Discard it (bad data, unprocessable, etc.) |
+| **Reject** | Discard it (bad data, unprocessable, etc.) — lands on the DLQ topic if the group has one configured, otherwise it's gone for good |
 | **Renew** | Extend the time allowed for processing the message |
 
 ![image](docs/reject-order.png)

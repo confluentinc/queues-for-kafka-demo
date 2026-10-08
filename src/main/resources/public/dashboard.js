@@ -3,6 +3,8 @@ const UPDATE_INTERVAL = 1000; // Update every second to match metric pipeline
 
 let inventoryData = {};
 let chefsData = [];
+let dlqRecords = [];
+let dlqIndex = 0;
 
 // Initialize dashboard
 document.addEventListener('DOMContentLoaded', () => {
@@ -199,7 +201,8 @@ async function updateDashboard() {
         await Promise.all([
             updateInventory(),
             updateChefs(),
-            updateAutoScale()
+            updateAutoScale(),
+            updateDlq()
         ]);
         updateLastUpdateTime();
     } catch (error) {
@@ -452,6 +455,134 @@ function renderAutoScale(data) {
         ` : ''}
     `;
 }
+
+function escapeHtml(value) {
+    if (value === null || value === undefined) return '';
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+async function updateDlq() {
+    try {
+        const [countResponse, recordsResponse] = await Promise.all([
+            fetch(`${API_BASE}/api/dlq/count`),
+            fetch(`${API_BASE}/api/dlq/records`)
+        ]);
+        if (!countResponse.ok) throw new Error('Failed to fetch DLQ count');
+        if (!recordsResponse.ok) throw new Error('Failed to fetch DLQ records');
+
+        const countData = await countResponse.json();
+        const newRecords = await recordsResponse.json();
+
+        // Keep the inspector pointed at the same record (by dlqOffset) across refreshes.
+        const currentOffset = dlqRecords[dlqIndex] ? dlqRecords[dlqIndex].dlqOffset : undefined;
+        dlqRecords = newRecords;
+        if (dlqRecords.length === 0) {
+            dlqIndex = 0;
+        } else {
+            const sameOffsetIndex = dlqRecords.findIndex(r => r.dlqOffset === currentOffset);
+            dlqIndex = sameOffsetIndex >= 0 ? sameOffsetIndex : dlqRecords.length - 1;
+        }
+
+        renderDlqStats(countData);
+        renderDlqInspector();
+    } catch (error) {
+        console.error('Error fetching DLQ data:', error);
+        const container = document.getElementById('dlq-stats-container');
+        if (container) {
+            container.innerHTML = '<div class="loading">Error loading DLQ status</div>';
+        }
+    }
+}
+
+function renderDlqStats(countData) {
+    const container = document.getElementById('dlq-stats-container');
+    if (!container) return;
+
+    const dlqCount = countData.count !== undefined ? countData.count : 0;
+    const rejectedCount = countData.rejected !== undefined ? countData.rejected : 0;
+    const dlqClass = dlqCount > 0 ? 'rejected-orders' : '';
+
+    container.innerHTML = `
+        <div class="stat-card ${dlqClass}">
+            <div class="stat-label">DLQ Records</div>
+            <div class="stat-value">${dlqCount}</div>
+            <div class="stat-description">Total landed in the dead-letter queue</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Rejected Orders</div>
+            <div class="stat-value">${rejectedCount}</div>
+            <div class="stat-description">Explicit Reject acks only</div>
+        </div>
+    `;
+}
+
+function renderDlqInspector() {
+    const container = document.getElementById('dlq-inspector-container');
+    if (!container) return;
+
+    if (dlqRecords.length === 0) {
+        container.innerHTML = '<div class="loading">No DLQ records yet. Configure a DLQ topic on chefs-share-group and reject or exhaust some orders to see them here.</div>';
+        return;
+    }
+
+    const record = dlqRecords[dlqIndex];
+    const orderLabel = escapeHtml(record.orderId || '(unparsed)');
+    const payloadHtml = record.hasPayload
+        ? `<div class="status-value status-accept">Order ${orderLabel} — ${record.orderItemCount || 0} item(s) copied</div>`
+        : `<div class="status-value status-reject">None — group has errors.deadletterqueue.copy.record.enable=false (headers only)</div>`;
+
+    container.innerHTML = `
+        <div class="dlq-nav">
+            <button class="scale-btn remove-chef-btn" onclick="dlqPrev()" ${dlqIndex <= 0 ? 'disabled' : ''}>⬅ Prev</button>
+            <div class="dlq-nav-position">Record ${dlqIndex + 1} of ${dlqRecords.length}</div>
+            <button class="scale-btn add-chef-btn" onclick="dlqNext()" ${dlqIndex >= dlqRecords.length - 1 ? 'disabled' : ''}>Next ➡</button>
+        </div>
+        <div class="dlq-record-detail">
+            <div class="chef-status">
+                <div class="status-label">Original Topic / Partition / Offset:</div>
+                <div class="status-value">${escapeHtml(record.originalTopic) || '-'} / ${escapeHtml(record.originalPartition) || '-'} / ${escapeHtml(record.originalOffset) || '-'}</div>
+            </div>
+            <div class="chef-status">
+                <div class="status-label">Group:</div>
+                <div class="status-value">${escapeHtml(record.group) || '-'}</div>
+            </div>
+            <div class="chef-status">
+                <div class="status-label">Delivery Count:</div>
+                <div class="status-value">${escapeHtml(record.deliveryCount) || '-'}</div>
+            </div>
+            <div class="chef-status">
+                <div class="status-label">Reason:</div>
+                <div class="status-value">${escapeHtml(record.reason) || '-'}</div>
+            </div>
+            <div class="chef-status">
+                <div class="status-label">Payload:</div>
+                ${payloadHtml}
+            </div>
+        </div>
+    `;
+}
+
+function dlqPrev() {
+    if (dlqIndex > 0) {
+        dlqIndex--;
+        renderDlqInspector();
+    }
+}
+
+function dlqNext() {
+    if (dlqIndex < dlqRecords.length - 1) {
+        dlqIndex++;
+        renderDlqInspector();
+    }
+}
+
+window.dlqPrev = dlqPrev;
+window.dlqNext = dlqNext;
 
 function showError(message) {
     const container = document.querySelector('.container');

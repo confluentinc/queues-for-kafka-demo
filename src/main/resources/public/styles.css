@@ -472,3 +472,40 @@ footer {
     transform: none;
 }
 
+.dlq-section {
+    grid-column: 1 / -1;
+}
+
+.dlq-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.dlq-inspector {
+    background: white;
+    border-radius: 10px;
+    padding: 20px;
+}
+
+.dlq-nav {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.dlq-nav-position {
+    font-weight: 600;
+    color: #666;
+    min-width: 140px;
+    text-align: center;
+}
+
+.dlq-record-detail {
+    border-top: 1px solid #e0e0e0;
+    padding-top: 15px;
+}
+

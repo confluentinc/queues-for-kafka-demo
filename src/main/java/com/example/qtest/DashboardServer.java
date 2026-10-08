@@ -47,6 +47,7 @@ public class DashboardServer {
     private static final int MAX_CONSECUTIVE_FAILURES = 3;
 
     private final InventoryConsumer inventoryConsumer;
+    private final DlqTrackingConsumer dlqTrackingConsumer = new DlqTrackingConsumer();
     private final ChefAutoScaler autoScaler;
     private final boolean kedaMode;
     private final String prometheusUrl;
@@ -548,6 +549,19 @@ public class DashboardServer {
         Spark.get("/api/health", (req, res) -> {
             return "{\"status\": \"ok\"}";
         });
+
+        Spark.get("/api/dlq/count", (req, res) -> {
+            res.type("application/json");
+            Map<String, Object> result = new HashMap<>();
+            result.put("count", dlqTrackingConsumer.getCount());
+            result.put("rejected", rejectedOrders.size());
+            return objectMapper.writeValueAsString(result);
+        });
+
+        Spark.get("/api/dlq/records", (req, res) -> {
+            res.type("application/json");
+            return objectMapper.writeValueAsString(dlqTrackingConsumer.getRecords());
+        });
         
         Spark.post("/api/reset", (req, res) -> {
             processedOrders.clear();
@@ -784,6 +798,7 @@ public class DashboardServer {
         if (autoScaler != null) {
             autoScaler.stop();
         }
+        dlqTrackingConsumer.stop();
         Spark.stop();
     }
 
@@ -870,6 +885,7 @@ public class DashboardServer {
         });
         inventoryThread.setDaemon(true);
         inventoryThread.start();
+        server.dlqTrackingConsumer.start();
         server.start();
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
