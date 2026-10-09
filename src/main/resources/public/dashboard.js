@@ -99,48 +99,6 @@ async function generateOrders() {
     }
 }
 
-async function addChef() {
-    try {
-        const response = await fetch(`${API_BASE}/api/scaling/add-chef`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
-        });
-        
-        if (!response.ok) {
-            const error = await response.json();
-            console.error('Failed to add chef:', error.error);
-            return;
-        }
-        
-        await updateDashboard();
-    } catch (error) {
-        console.error('Error adding chef:', error);
-    }
-}
-
-async function removeChef() {
-    try {
-        const response = await fetch(`${API_BASE}/api/scaling/remove-chef`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
-        });
-        
-        if (!response.ok) {
-            const error = await response.json();
-            console.error('Failed to remove chef:', error.error);
-            return;
-        }
-        
-        await updateDashboard();
-    } catch (error) {
-        console.error('Error removing chef:', error);
-    }
-}
-
-// Expose manual scaling functions to global scope for onclick handlers
-window.addChef = addChef;
-window.removeChef = removeChef;
-
 async function restockInventory() {
     const btn = document.getElementById('restock-btn');
     if (!btn) return;
@@ -361,11 +319,6 @@ async function updateAutoScale() {
         renderDlqInspector();
     } catch (error) {
         console.error('Error fetching auto-scale status:', error);
-        // Show error in UI
-        const container = document.getElementById('autoscale-container');
-        if (container) {
-            container.innerHTML = '<div class="loading">Error loading auto-scale status</div>';
-        }
     }
 }
 
@@ -382,92 +335,52 @@ function updateDlqRecords(newRecords) {
 }
 
 function renderAutoScale(data) {
-    const container = document.getElementById('autoscale-container');
     const headerMetricsContainer = document.getElementById('header-metrics-container');
-    if (!container) {
-        console.warn('autoscale-container not found in DOM');
+    if (!headerMetricsContainer) {
+        console.warn('header-metrics-container not found in DOM');
         return;
     }
 
     if (data.enabled === false) {
-        container.innerHTML = '<div class="loading">Auto-scaling is disabled</div>';
-        if (headerMetricsContainer) {
-            headerMetricsContainer.innerHTML = '';
-        }
+        headerMetricsContainer.innerHTML = '';
         return;
     }
 
     const queueDepth = data.queueDepth !== undefined ? data.queueDepth : 0;
     const activeChefs = data.activeChefs !== undefined ? data.activeChefs : 0;
     const targetChefs = data.targetChefs !== undefined ? data.targetChefs : 0;
-    const chefNames = data.activeChefNames || [];
     const manualMode = data.manualMode === true;
-    const maxChefs = data.maxChefs || 4;
-    const minChefs = data.minChefs || 1;
 
     const kedaMode = data.kedaMode === true;
     const depthClass = queueDepth >= 4 ? 'high-queue' : queueDepth >= 2 ? 'medium-queue' : 'low-queue';
 
-    // Manual scaling buttons (only shown in manual mode, not KEDA mode)
-    const manualControls = manualMode && !kedaMode ? `
-        <div class="manual-scaling-controls">
-            <div class="manual-scaling-label">👆 Manual Scaling</div>
-            <div class="manual-scaling-buttons">
-                <button class="scale-btn remove-chef-btn" onclick="removeChef()" ${activeChefs <= minChefs ? 'disabled' : ''}>
-                    ➖ Remove Chef
-                </button>
-                <button class="scale-btn add-chef-btn" onclick="addChef()" ${activeChefs >= maxChefs ? 'disabled' : ''}>
-                    ➕ Add Chef
-                </button>
-            </div>
-        </div>
-    ` : '';
-
-    const threshold = data.threshold || 4;
-
-    // Target chefs card content depends on mode
-    let targetLabel, targetValue, targetDescription;
+    // Target chefs chip content depends on mode
+    let targetLabel, targetValue;
     if (kedaMode) {
         targetLabel = 'Target Chefs';
         targetValue = targetChefs;
-        targetDescription = `KEDA scaling`;
     } else if (manualMode) {
         targetLabel = 'Mode';
         targetValue = '👆';
-        targetDescription = 'Manual scaling';
     } else {
         targetLabel = 'Target Chefs';
         targetValue = targetChefs;
-        targetDescription = 'Desired count';
     }
 
     // Live summary chips live in the header, next to the action buttons
-    if (headerMetricsContainer) {
-        headerMetricsContainer.innerHTML = `
-            <div class="header-metric-chip ${depthClass}">
-                <div class="header-metric-label">Queue Depth</div>
-                <div class="header-metric-value">${queueDepth}</div>
-            </div>
-            <div class="header-metric-chip">
-                <div class="header-metric-label">${targetLabel}</div>
-                <div class="header-metric-value">${targetValue}</div>
-            </div>
-            <div class="header-metric-chip">
-                <div class="header-metric-label">Active Chefs</div>
-                <div class="header-metric-value">${activeChefs}</div>
-            </div>
-        `;
-    }
-
-    // Update the container with new data
-    container.innerHTML = `
-        ${manualControls}
-        ${chefNames.length > 0 ? `
-            <div class="chef-names">
-                <div class="chef-names-label">Active Chef Names:</div>
-                <div class="chef-names-list">${chefNames.map(name => `<span class="chef-name-tag">${name}</span>`).join('')}</div>
-            </div>
-        ` : ''}
+    headerMetricsContainer.innerHTML = `
+        <div class="header-metric-chip ${depthClass}">
+            <div class="header-metric-label">Queue Depth</div>
+            <div class="header-metric-value">${queueDepth}</div>
+        </div>
+        <div class="header-metric-chip">
+            <div class="header-metric-label">${targetLabel}</div>
+            <div class="header-metric-value">${targetValue}</div>
+        </div>
+        <div class="header-metric-chip">
+            <div class="header-metric-label">Active Chefs</div>
+            <div class="header-metric-value">${activeChefs}</div>
+        </div>
     `;
 }
 

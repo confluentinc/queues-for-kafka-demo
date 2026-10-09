@@ -346,16 +346,6 @@ footer {
     margin: 20px;
 }
 
-.autoscale-section {
-    grid-column: 1 / -1;
-}
-
-.autoscale-info {
-    background: white;
-    border-radius: 10px;
-    padding: 20px;
-}
-
 .stat-card {
     background: #f8f9fa;
     border-radius: 10px;
@@ -393,54 +383,6 @@ footer {
 .stat-description {
     font-size: 0.85em;
     color: #999;
-}
-
-.chef-names {
-    margin-top: 20px;
-    padding-top: 20px;
-    border-top: 1px solid #e0e0e0;
-}
-
-.chef-names-label {
-    font-weight: 600;
-    color: #666;
-    margin-bottom: 10px;
-}
-
-.chef-names-list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-}
-
-.chef-name-tag {
-    background: #667eea;
-    color: white;
-    padding: 5px 12px;
-    border-radius: 20px;
-    font-size: 0.85em;
-    font-weight: 500;
-}
-
-.manual-scaling-controls {
-    margin-top: 20px;
-    padding: 20px;
-    background: #f8f9fa;
-    border-radius: 10px;
-    border: 2px dashed #667eea;
-}
-
-.manual-scaling-label {
-    font-weight: 600;
-    color: #667eea;
-    margin-bottom: 15px;
-    font-size: 1.1em;
-}
-
-.manual-scaling-buttons {
-    display: flex;
-    gap: 15px;
-    justify-content: center;
 }
 
 .scale-btn {
