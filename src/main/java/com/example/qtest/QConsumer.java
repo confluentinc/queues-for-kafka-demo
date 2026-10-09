@@ -6,6 +6,7 @@ import org.apache.kafka.clients.consumer.KafkaShareConsumer;
 import org.apache.kafka.clients.consumer.AcknowledgeType;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.TopicIdPartition;
+import org.apache.kafka.common.errors.RecordDeserializationException;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.OutputStream;
@@ -127,7 +128,34 @@ public class QConsumer {
             printChef(chefName);
 
             while (running.get()) {
-                ConsumerRecords<String, Order> records = consumer.poll(Duration.ofMillis(1000));
+                ConsumerRecords<String, Order> records;
+                try {
+                    records = consumer.poll(Duration.ofMillis(1000));
+                } catch (RecordDeserializationException e) {
+                    // Poison pill: the broker delivered a record this consumer's Deserializer
+                    // couldn't parse. RecordDeserializationException carries the offending
+                    // topic/partition/offset even though no value could be produced, so we can
+                    // reject it directly by coordinate instead of crashing the whole consumer.
+                    String badTopic = e.topicPartition().topic();
+                    int badPartition = e.topicPartition().partition();
+                    long badOffset = e.offset();
+                    String cause = e.getCause() != null ? e.getCause().getMessage() : e.getMessage();
+                    System.out.printf("%n💀 Poison pill at %s-%d@%d: %s%n", badTopic, badPartition, badOffset, cause);
+
+                    consumer.acknowledge(badTopic, badPartition, badOffset, AcknowledgeType.REJECT);
+                    Map<TopicIdPartition, Optional<KafkaException>> commitResult = consumer.commitSync();
+                    for (Optional<KafkaException> commitException : commitResult.values()) {
+                        if (commitException.isPresent()) {
+                            System.out.printf("⚠️ Commit warning after poison-pill reject: %s%n",
+                                commitException.get().getMessage());
+                        }
+                    }
+
+                    String syntheticOrderId = "POISON@" + badTopic + "-" + badPartition + "-" + badOffset;
+                    reportToDashboard(chefName, syntheticOrderId, "REJECTED", null, 0);
+                    continue;
+                }
+
                 if (records.isEmpty()) {
                     long now = System.currentTimeMillis();
                     if (now - lastHeartbeat > 3_000) {

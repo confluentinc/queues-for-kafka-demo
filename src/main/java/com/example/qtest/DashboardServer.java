@@ -18,6 +18,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -66,6 +67,7 @@ public class DashboardServer {
     private AdminClient adminClient;
     private volatile long cachedShareGroupLag = 0;
     private KafkaProducer<String, Order> producer;
+    private KafkaProducer<String, byte[]> poisonProducer;
     private final Properties producerProps;
     
     // Baseline for fallback queue depth calculation (used when AdminClient is unavailable)
@@ -146,6 +148,58 @@ public class DashboardServer {
                 producer = null;
             }
         }
+    }
+
+    private void initPoisonProducer() {
+        if (poisonProducer == null && producerProps != null) {
+            try {
+                Properties poisonProps = new Properties();
+                poisonProps.putAll(producerProps);
+                poisonProps.setProperty("value.serializer", "org.apache.kafka.common.serialization.ByteArraySerializer");
+                poisonProducer = new KafkaProducer<>(poisonProps);
+                System.out.println("💀 Poison-pill producer initialized");
+            } catch (Exception e) {
+                Throwable cause = e.getCause() != null ? e.getCause() : e;
+                System.err.println("❌ Failed to create poison-pill producer: " + cause.getMessage());
+                poisonProducer = null;
+            }
+        }
+    }
+
+    /**
+     * Sends one deliberately truncated, non-parseable JSON record straight onto orders-queue
+     * (bypassing Order/JsonSerializer entirely) so a chef's OrderDeserializer fails exactly like
+     * a real poison-pill message would, exercising the RecordDeserializationException recovery
+     * path in QConsumer.
+     */
+    private Map<String, Object> sendPoisonPill() {
+        Map<String, Object> result = new HashMap<>();
+        initPoisonProducer();
+        if (poisonProducer == null) {
+            result.put("status", "error");
+            result.put("error", "Poison-pill producer not available");
+            return result;
+        }
+
+        String key = "poison-" + System.currentTimeMillis();
+        byte[] junk = "{\"orderId\":\"POISON\",\"orderItems\":[{\"itemNam"
+            .getBytes(StandardCharsets.UTF_8);
+        ProducerRecord<String, byte[]> record = new ProducerRecord<>(ORDERS_TOPIC, key, junk);
+
+        try {
+            RecordMetadata metadata = poisonProducer.send(record).get(SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            System.out.printf("💀 Poison pill sent to %s-%d@%d%n",
+                metadata.topic(), metadata.partition(), metadata.offset());
+            result.put("status", "success");
+            result.put("topic", metadata.topic());
+            result.put("partition", metadata.partition());
+            result.put("offset", metadata.offset());
+        } catch (Exception e) {
+            System.err.println("❌ Failed to send poison pill: " + e.getMessage());
+            result.put("status", "error");
+            result.put("error", e.getMessage());
+        }
+        return result;
     }
     
     private List<OrderItem> generateRandomOrderItems() {
@@ -628,6 +682,16 @@ public class DashboardServer {
             }
         });
 
+        Spark.post("/api/orders/poison-pill", (req, res) -> {
+            res.type("application/json");
+            System.out.println("💀 Sending poison pill via dashboard...");
+            Map<String, Object> result = sendPoisonPill();
+            if ("error".equals(result.get("status"))) {
+                res.status(502);
+            }
+            return objectMapper.writeValueAsString(result);
+        });
+
         Spark.init();
         stateScheduler.scheduleAtFixedRate(this::saveState, 10, 10, TimeUnit.SECONDS);
 
@@ -794,7 +858,11 @@ public class DashboardServer {
             producer.close();
             System.out.println("📤 Kafka producer closed");
         }
-        
+
+        if (poisonProducer != null) {
+            poisonProducer.close();
+        }
+
         if (autoScaler != null) {
             autoScaler.stop();
         }

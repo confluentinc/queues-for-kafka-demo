@@ -22,6 +22,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (restockBtn) {
         restockBtn.addEventListener('click', restockInventory);
     }
+
+    // Set up poison pill button
+    const poisonBtn = document.getElementById('poison-pill-btn');
+    if (poisonBtn) {
+        poisonBtn.addEventListener('click', sendPoisonPill);
+    }
 });
 
 async function generateOrders() {
@@ -151,6 +157,53 @@ async function restockInventory() {
             btn.classList.remove('error');
             btn.disabled = false;
         }, 2000);
+    }
+}
+
+async function sendPoisonPill() {
+    const btn = document.getElementById('poison-pill-btn');
+    if (!btn) return;
+
+    btn.disabled = true;
+    const originalText = btn.textContent;
+    btn.textContent = '⏳ Sending...';
+    btn.classList.add('loading');
+
+    try {
+        const response = await fetch(`${API_BASE}/api/orders/poison-pill`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || result.status === 'error') {
+            throw new Error(result.error || 'Failed to send poison pill');
+        }
+
+        btn.textContent = `💀 Sent to offset ${result.offset}`;
+        btn.classList.remove('loading');
+        btn.classList.add('success');
+
+        await updateDashboard();
+
+        setTimeout(() => {
+            btn.textContent = originalText;
+            btn.classList.remove('success');
+            btn.disabled = false;
+        }, 3000);
+
+    } catch (error) {
+        console.error('Error sending poison pill:', error);
+        btn.textContent = '❌ Failed - Try Again';
+        btn.classList.remove('loading');
+        btn.classList.add('error');
+
+        setTimeout(() => {
+            btn.textContent = originalText;
+            btn.classList.remove('error');
+            btn.disabled = false;
+        }, 3000);
     }
 }
 

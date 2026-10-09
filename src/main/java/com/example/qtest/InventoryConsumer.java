@@ -4,6 +4,7 @@ import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.errors.RecordDeserializationException;
 import org.apache.kafka.common.errors.WakeupException;
 
 import java.time.Duration;
@@ -133,8 +134,20 @@ public class InventoryConsumer {
 
         try {
             while (running.get()) {
-                ConsumerRecords<String, Order> records = consumer.poll(Duration.ofMillis(1000));
-                
+                ConsumerRecords<String, Order> records;
+                try {
+                    records = consumer.poll(Duration.ofMillis(1000));
+                } catch (RecordDeserializationException e) {
+                    // Poison pill: this consumer group has no DLQ concept (it's a plain
+                    // KafkaConsumer, not a share consumer), so the standard recovery is to
+                    // seek past the bad offset and drop it, rather than reject it anywhere.
+                    System.out.printf("%n💀 Inventory consumer dropping poison pill at %s-%d@%d: %s%n",
+                        e.topicPartition().topic(), e.topicPartition().partition(), e.offset(),
+                        e.getCause() != null ? e.getCause().getMessage() : e.getMessage());
+                    consumer.seek(e.topicPartition(), e.offset() + 1);
+                    continue;
+                }
+
                 for (ConsumerRecord<String, Order> record : records) {
                     // Count messages for queue depth calculation
                     messagesSeenCount.incrementAndGet();

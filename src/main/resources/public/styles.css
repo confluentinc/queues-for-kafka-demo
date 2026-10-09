@@ -165,6 +165,37 @@ header h1 {
     background: linear-gradient(135deg, #ff6b6b 0%, #c92a2a 100%);
 }
 
+.poison-btn {
+    background: linear-gradient(135deg, #495057 0%, #212529 100%);
+    color: white;
+}
+
+.poison-btn:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(33, 37, 41, 0.5);
+}
+
+.poison-btn:active:not(:disabled) {
+    transform: translateY(0);
+}
+
+.poison-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.8;
+}
+
+.poison-btn.loading {
+    background: linear-gradient(135deg, #ffd93d 0%, #ffa94d 100%);
+}
+
+.poison-btn.success {
+    background: linear-gradient(135deg, #51cf66 0%, #37b24d 100%);
+}
+
+.poison-btn.error {
+    background: linear-gradient(135deg, #ff6b6b 0%, #c92a2a 100%);
+}
+
 .dashboard-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
