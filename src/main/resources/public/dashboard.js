@@ -315,7 +315,7 @@ async function updateAutoScale() {
         const autoscaleData = await autoscaleResponse.json();
         updateDlqRecords(await dlqResponse.json());
         renderAutoScale(autoscaleData);
-        renderDlqStats(autoscaleData.rejectedOrders !== undefined ? autoscaleData.rejectedOrders : 0, dlqRecords.length);
+        renderDlqStats(autoscaleData.rejectedOrders !== undefined ? autoscaleData.rejectedOrders : 0, dlqRecords);
         renderDlqInspector();
     } catch (error) {
         console.error('Error fetching auto-scale status:', error);
@@ -394,12 +394,16 @@ function escapeHtml(value) {
         .replace(/'/g, '&#39;');
 }
 
-function renderDlqStats(rejectedOrders, dlqCount) {
+function renderDlqStats(rejectedOrders, dlqRecordsList) {
     const container = document.getElementById('dlq-stats-container');
     if (!container) return;
 
+    const dlqCount = dlqRecordsList.length;
+    const exhaustedCount = dlqRecordsList.filter(r => r.reason && !r.reason.toLowerCase().includes('rejected by client')).length;
+
     const rejectedClass = rejectedOrders > 0 ? 'rejected-orders' : '';
     const dlqClass = dlqCount > 0 ? 'rejected-orders' : '';
+    const exhaustedClass = exhaustedCount > 0 ? 'rejected-orders' : '';
 
     container.innerHTML = `
         <div class="stat-card ${rejectedClass}">
@@ -411,6 +415,11 @@ function renderDlqStats(rejectedOrders, dlqCount) {
             <div class="stat-label has-tooltip" title="Total records written to the dlq.orders-queue topic. Includes both explicit Rejects and orders that exhausted their delivery attempts via repeated Release.">DLQ Records</div>
             <div class="stat-value">${dlqCount}</div>
             <div class="stat-description">Landed in the dead-letter queue</div>
+        </div>
+        <div class="stat-card ${exhaustedClass}">
+            <div class="stat-label has-tooltip" title="DLQ records whose reason was 'delivery count exceeded the threshold' — ran out of delivery attempts via repeated Release, never an explicit Reject.">Delivery Exhausted</div>
+            <div class="stat-value">${exhaustedCount}</div>
+            <div class="stat-description">Timed out, never rejected</div>
         </div>
     `;
 }
