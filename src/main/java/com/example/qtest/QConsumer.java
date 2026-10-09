@@ -69,13 +69,15 @@ public class QConsumer {
             }
         }
 
+        // Only Accept and Release are randomly decided. Reject now only ever happens for a
+        // real reason: a poison pill (caught below as RecordDeserializationException) or a
+        // record that exhausts its delivery attempts via repeated Release -- never a coin flip
+        // on an order that parsed and looks fine.
         double acceptRate = 0.80;
-        double releaseRate = 0.15;
         String acceptRateEnv = System.getenv("CHEF_ACCEPT_RATE");
         if (acceptRateEnv != null && !acceptRateEnv.isEmpty()) {
             try {
                 acceptRate = Double.parseDouble(acceptRateEnv);
-                releaseRate = (1.0 - acceptRate) * 0.75; // 75% of non-accepts are releases
             } catch (NumberFormatException e) {
                 System.err.println("Invalid CHEF_ACCEPT_RATE, using default 0.80");
             }
@@ -116,8 +118,8 @@ public class QConsumer {
             consumer.subscribe(Arrays.asList(TOPIC));
             System.out.printf("%n✅ Subscribed to topic '%s' (group='%s')%n",
                 TOPIC, props.getProperty("group.id"));
-            System.out.printf("⚙️  Accept rate: %.0f%%, Release rate: %.0f%%, Reject rate: %.0f%%%n",
-                acceptRate * 100, releaseRate * 100, (1.0 - acceptRate - releaseRate) * 100);
+            System.out.printf("⚙️  Accept rate: %.0f%%, Release rate: %.0f%%%n",
+                acceptRate * 100, (1.0 - acceptRate) * 100);
             System.out.printf("⏱️  Processing delay: %d ms%n", processingDelayMs);
             System.out.println();
             
@@ -197,18 +199,13 @@ public class QConsumer {
                         ackType = AcknowledgeType.ACCEPT;
                         order.setStatus("ACCEPTED");
                         action = "ACCEPTED";
-                    } else if (decision < acceptRate + releaseRate) {
+                    } else {
                         ackType = AcknowledgeType.RELEASE;
                         order.setStatus("RELEASED");
                         action = "RELEASED";
-                    } else {
-                        ackType = AcknowledgeType.REJECT;
-                        order.setStatus("REJECTED");
-                        action = "REJECTED";
                     }
 
-                    String actionEmoji = action.equals("ACCEPTED") ? "✅" : 
-                                       action.equals("RELEASED") ? "↩️" : "❌";
+                    String actionEmoji = action.equals("ACCEPTED") ? "✅" : "↩️";
                     System.out.printf("%s %s: %s%n", actionEmoji, action.toLowerCase(), order.getOrderId());
                     consumer.acknowledge(r, ackType);
                     
