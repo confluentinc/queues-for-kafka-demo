@@ -40,17 +40,22 @@
 
             <!-- Auto-Scaling Section -->
             <section class="autoscale-section">
-                <h2>🤖 DLQ and Auto-Scaling Status</h2>
+                <h2>🤖 Auto-Scaling Status</h2>
                 <div id="autoscale-container" class="autoscale-info">
                     <!-- Auto-scaling status will be populated here -->
                 </div>
             </section>
 
-            <!-- Dead-Letter Queue Inspector Section -->
+            <!-- Dead-Letter Queue Section: stats and inspector side by side -->
             <section class="dlq-section">
                 <h2>💀 Dead-Letter Queue</h2>
-                <div id="dlq-inspector-container" class="dlq-inspector">
-                    <!-- DLQ record inspector will be populated here -->
+                <div class="dlq-combined">
+                    <div id="dlq-stats-container" class="dlq-stats-column">
+                        <!-- Rejected Orders / DLQ Records stat cards will be populated here -->
+                    </div>
+                    <div id="dlq-inspector-container" class="dlq-inspector-column">
+                        <!-- DLQ record inspector will be populated here -->
+                    </div>
                 </div>
             </section>
         </div>

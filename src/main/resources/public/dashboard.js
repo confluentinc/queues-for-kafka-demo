@@ -356,7 +356,8 @@ async function updateAutoScale() {
 
         const autoscaleData = await autoscaleResponse.json();
         updateDlqRecords(await dlqResponse.json());
-        renderAutoScale(autoscaleData, dlqRecords.length);
+        renderAutoScale(autoscaleData);
+        renderDlqStats(autoscaleData.rejectedOrders !== undefined ? autoscaleData.rejectedOrders : 0, dlqRecords.length);
         renderDlqInspector();
     } catch (error) {
         console.error('Error fetching auto-scale status:', error);
@@ -380,7 +381,7 @@ function updateDlqRecords(newRecords) {
     }
 }
 
-function renderAutoScale(data, dlqCount) {
+function renderAutoScale(data) {
     const container = document.getElementById('autoscale-container');
     if (!container) {
         console.warn('autoscale-container not found in DOM');
@@ -395,7 +396,6 @@ function renderAutoScale(data, dlqCount) {
     const queueDepth = data.queueDepth !== undefined ? data.queueDepth : 0;
     const activeChefs = data.activeChefs !== undefined ? data.activeChefs : 0;
     const targetChefs = data.targetChefs !== undefined ? data.targetChefs : 0;
-    const rejectedOrders = data.rejectedOrders !== undefined ? data.rejectedOrders : 0;
     const chefNames = data.activeChefNames || [];
     const manualMode = data.manualMode === true;
     const maxChefs = data.maxChefs || 4;
@@ -404,9 +404,6 @@ function renderAutoScale(data, dlqCount) {
     const kedaMode = data.kedaMode === true;
     const depthClass = queueDepth >= 4 ? 'high-queue' : queueDepth >= 2 ? 'medium-queue' : 'low-queue';
     const scalingStatus = activeChefs < targetChefs ? 'scaling-up' : activeChefs > targetChefs ? 'scaling-down' : 'stable';
-    const rejectedClass = rejectedOrders > 0 ? 'rejected-orders' : '';
-    const dlqCountValue = dlqCount !== undefined ? dlqCount : 0;
-    const dlqClass = dlqCountValue > 0 ? 'rejected-orders' : '';
 
     // Manual scaling buttons (only shown in manual mode, not KEDA mode)
     const manualControls = manualMode && !kedaMode ? `
@@ -459,16 +456,6 @@ function renderAutoScale(data, dlqCount) {
                 <div class="stat-value">${activeChefs}</div>
                 <div class="stat-description">Currently running</div>
             </div>
-            <div class="stat-card ${rejectedClass}">
-                <div class="stat-label has-tooltip" title="Orders where a chef issued an explicit Reject. Orders that instead ran out of delivery attempts via repeated Release also land in the DLQ, but aren't counted here — see DLQ Records for the true total.">Rejected Orders</div>
-                <div class="stat-value">${rejectedOrders}</div>
-                <div class="stat-description">Rejected</div>
-            </div>
-            <div class="stat-card ${dlqClass}">
-                <div class="stat-label has-tooltip" title="Total records written to the dlq.orders-queue topic. Includes both explicit Rejects and orders that exhausted their delivery attempts via repeated Release.">DLQ Records</div>
-                <div class="stat-value">${dlqCountValue}</div>
-                <div class="stat-description">Landed in the dead-letter queue</div>
-            </div>
         </div>
         ${manualControls}
         ${chefNames.length > 0 ? `
@@ -488,6 +475,27 @@ function escapeHtml(value) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
+}
+
+function renderDlqStats(rejectedOrders, dlqCount) {
+    const container = document.getElementById('dlq-stats-container');
+    if (!container) return;
+
+    const rejectedClass = rejectedOrders > 0 ? 'rejected-orders' : '';
+    const dlqClass = dlqCount > 0 ? 'rejected-orders' : '';
+
+    container.innerHTML = `
+        <div class="stat-card ${rejectedClass}">
+            <div class="stat-label has-tooltip" title="Orders where a chef issued an explicit Reject. Orders that instead ran out of delivery attempts via repeated Release also land in the DLQ, but aren't counted here — see DLQ Records for the true total.">Rejected Orders</div>
+            <div class="stat-value">${rejectedOrders}</div>
+            <div class="stat-description">Rejected</div>
+        </div>
+        <div class="stat-card ${dlqClass}">
+            <div class="stat-label has-tooltip" title="Total records written to the dlq.orders-queue topic. Includes both explicit Rejects and orders that exhausted their delivery attempts via repeated Release.">DLQ Records</div>
+            <div class="stat-value">${dlqCount}</div>
+            <div class="stat-description">Landed in the dead-letter queue</div>
+        </div>
+    `;
 }
 
 function renderDlqInspector() {
