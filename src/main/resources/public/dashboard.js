@@ -383,6 +383,7 @@ function updateDlqRecords(newRecords) {
 
 function renderAutoScale(data) {
     const container = document.getElementById('autoscale-container');
+    const headerMetricsContainer = document.getElementById('header-metrics-container');
     if (!container) {
         console.warn('autoscale-container not found in DOM');
         return;
@@ -390,6 +391,9 @@ function renderAutoScale(data) {
 
     if (data.enabled === false) {
         container.innerHTML = '<div class="loading">Auto-scaling is disabled</div>';
+        if (headerMetricsContainer) {
+            headerMetricsContainer.innerHTML = '';
+        }
         return;
     }
 
@@ -403,7 +407,6 @@ function renderAutoScale(data) {
 
     const kedaMode = data.kedaMode === true;
     const depthClass = queueDepth >= 4 ? 'high-queue' : queueDepth >= 2 ? 'medium-queue' : 'low-queue';
-    const scalingStatus = activeChefs < targetChefs ? 'scaling-up' : activeChefs > targetChefs ? 'scaling-down' : 'stable';
 
     // Manual scaling buttons (only shown in manual mode, not KEDA mode)
     const manualControls = manualMode && !kedaMode ? `
@@ -438,25 +441,26 @@ function renderAutoScale(data) {
         targetDescription = 'Desired count';
     }
 
+    // Live summary chips live in the header, next to the action buttons
+    if (headerMetricsContainer) {
+        headerMetricsContainer.innerHTML = `
+            <div class="header-metric-chip ${depthClass}">
+                <div class="header-metric-label">Queue Depth</div>
+                <div class="header-metric-value">${queueDepth}</div>
+            </div>
+            <div class="header-metric-chip">
+                <div class="header-metric-label">${targetLabel}</div>
+                <div class="header-metric-value">${targetValue}</div>
+            </div>
+            <div class="header-metric-chip">
+                <div class="header-metric-label">Active Chefs</div>
+                <div class="header-metric-value">${activeChefs}</div>
+            </div>
+        `;
+    }
+
     // Update the container with new data
     container.innerHTML = `
-        <div class="autoscale-stats">
-            <div class="stat-card ${depthClass}">
-                <div class="stat-label">Queue Depth</div>
-                <div class="stat-value">${queueDepth}</div>
-                <div class="stat-description">Unprocessed messages</div>
-            </div>
-            <div class="stat-card ${manualMode ? '' : scalingStatus}">
-                <div class="stat-label">${targetLabel}</div>
-                <div class="stat-value">${targetValue}</div>
-                <div class="stat-description">${targetDescription}</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">Active Chefs</div>
-                <div class="stat-value">${activeChefs}</div>
-                <div class="stat-description">Currently running</div>
-            </div>
-        </div>
         ${manualControls}
         ${chefNames.length > 0 ? `
             <div class="chef-names">
