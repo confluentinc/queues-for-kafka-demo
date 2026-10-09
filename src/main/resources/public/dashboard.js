@@ -460,12 +460,12 @@ function renderAutoScale(data, dlqCount) {
                 <div class="stat-description">Currently running</div>
             </div>
             <div class="stat-card ${rejectedClass}">
-                <div class="stat-label">Rejected Orders</div>
+                <div class="stat-label has-tooltip" title="Orders where a chef issued an explicit Reject. Orders that instead ran out of delivery attempts via repeated Release also land in the DLQ, but aren't counted here — see DLQ Records for the true total.">Rejected Orders</div>
                 <div class="stat-value">${rejectedOrders}</div>
                 <div class="stat-description">Rejected</div>
             </div>
             <div class="stat-card ${dlqClass}">
-                <div class="stat-label">DLQ Records</div>
+                <div class="stat-label has-tooltip" title="Total records written to the dlq.orders-queue topic. Includes both explicit Rejects and orders that exhausted their delivery attempts via repeated Release.">DLQ Records</div>
                 <div class="stat-value">${dlqCountValue}</div>
                 <div class="stat-description">Landed in the dead-letter queue</div>
             </div>
@@ -513,23 +513,23 @@ function renderDlqInspector() {
         </div>
         <div class="dlq-record-detail">
             <div class="chef-status">
-                <div class="status-label">Original Topic / Partition / Offset:</div>
+                <div class="status-label has-tooltip" title="Where the original order lived before it was dead-lettered — topic / partition / offset on orders-queue. Not this DLQ record's own position.">Original Topic / Partition / Offset:</div>
                 <div class="status-value">${escapeHtml(record.originalTopic) || '-'} / ${escapeHtml(record.originalPartition) || '-'} / ${escapeHtml(record.originalOffset) || '-'}</div>
             </div>
             <div class="chef-status">
-                <div class="status-label">Group:</div>
+                <div class="status-label has-tooltip" title="The share group whose consumer caused this record to be dead-lettered.">Group:</div>
                 <div class="status-value">${escapeHtml(record.group) || '-'}</div>
             </div>
             <div class="chef-status">
-                <div class="status-label">Delivery Count:</div>
+                <div class="status-label has-tooltip" title="How many times the broker attempted to deliver this record to a consumer before it landed in the DLQ.">Delivery Count:</div>
                 <div class="status-value">${escapeHtml(record.deliveryCount) || '-'}</div>
             </div>
             <div class="chef-status">
-                <div class="status-label">Reason:</div>
+                <div class="status-label has-tooltip" title="Why this record was dead-lettered, reported by the Kafka broker (KIP-1191): either an explicit Reject, or delivery attempts exhausted after repeated Release.">Reason:</div>
                 <div class="status-value">${escapeHtml(record.reason) || '-'}</div>
             </div>
             <div class="chef-status">
-                <div class="status-label">Payload:</div>
+                <div class="status-label has-tooltip" title="Whether the original order was copied onto this DLQ record. Controlled by the share group's errors.deadletterqueue.copy.record.enable config — off by default.">Payload:</div>
                 ${payloadHtml}
             </div>
         </div>

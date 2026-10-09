@@ -502,3 +502,9 @@ footer {
     padding-top: 15px;
 }
 
+.has-tooltip {
+    cursor: help;
+    border-bottom: 1px dotted #999;
+    display: inline-block;
+}
+
