@@ -42,7 +42,10 @@ public class ChefAutoScaler {
     public ChefAutoScaler(String bootstrapServers, Properties adminProps, boolean manualMode) {
         this.manualMode = manualMode;
         this.dashboardUrl = System.getenv().getOrDefault("DASHBOARD_URL", "http://localhost:8080");
-        this.minChefs = Integer.parseInt(System.getenv().getOrDefault("AUTO_SCALE_MIN_CHEFS", "1"));
+        // Clamped to at least 1: a lone backlog record (e.g. a single poison pill) can never
+        // cross scaleUpThreshold on its own, so minChefs is the only thing guaranteeing a
+        // consumer is ever listening. AUTO_SCALE_MIN_CHEFS=0 would otherwise strand it forever.
+        this.minChefs = Math.max(1, Integer.parseInt(System.getenv().getOrDefault("AUTO_SCALE_MIN_CHEFS", "1")));
         this.maxChefs = Integer.parseInt(System.getenv().getOrDefault("AUTO_SCALE_MAX_CHEFS", "4"));
         this.scaleUpThreshold = Integer.parseInt(System.getenv().getOrDefault("AUTO_SCALE_UP_THRESHOLD", "5"));
         this.scaleDownThreshold = Integer.parseInt(System.getenv().getOrDefault("AUTO_SCALE_DOWN_THRESHOLD", "2"));
@@ -95,6 +98,20 @@ public class ChefAutoScaler {
         }
     }
     
+    /**
+     * Runs a scale check immediately instead of waiting for the next checkIntervalMs tick.
+     * Used right after producing a single record (e.g. a poison pill) that needs a listening
+     * consumer right away, rather than whenever the queue depth happens to be re-polled.
+     */
+    public void triggerImmediateScaleCheck() {
+        if (!running) return;
+        try {
+            checkAndScale();
+        } catch (Throwable t) {
+            System.err.println("⚠️ Immediate scale check failed: " + t.getMessage());
+        }
+    }
+
     private void checkAndScale() {
         try {
             long queueDepth = getQueueDepthFromDashboard();

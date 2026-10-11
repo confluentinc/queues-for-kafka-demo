@@ -190,6 +190,13 @@ public class DashboardServer {
             RecordMetadata metadata = poisonProducer.send(record).get(SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             System.out.printf("💀 Poison pill sent to %s-%d@%d%n",
                 metadata.topic(), metadata.partition(), metadata.offset());
+            ordersProduced.incrementAndGet(); // Track for queue depth, same as generateOrders()
+            if (autoScaler != null) {
+                // Don't wait for the next scheduled checkIntervalMs tick: a lone poison pill's
+                // lag (1) can never cross scaleUpThreshold on its own, so without this it only
+                // gets consumed whenever the floor chef happens to already be polling.
+                autoScaler.triggerImmediateScaleCheck();
+            }
             result.put("status", "success");
             result.put("topic", metadata.topic());
             result.put("partition", metadata.partition());
