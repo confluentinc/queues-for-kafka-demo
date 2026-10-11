@@ -191,6 +191,13 @@ public class DashboardServer {
             System.out.printf("💀 Poison pill sent to %s-%d@%d%n",
                 metadata.topic(), metadata.partition(), metadata.offset());
             ordersProduced.incrementAndGet(); // Track for queue depth, same as generateOrders()
+            if (adminClient != null) {
+                // The displayed Queue Depth comes from cachedShareGroupLag, refreshed only every
+                // 2s by the scheduled lagPoller -- completely independent of this request. Force
+                // a fresh lookup now so the dashboard has at least one chance to show the lag
+                // this pill creates, rather than waiting on whatever's left of that 2s window.
+                pollShareGroupLag();
+            }
             if (autoScaler != null) {
                 // Don't wait for the next scheduled checkIntervalMs tick: a lone poison pill's
                 // lag (1) can never cross scaleUpThreshold on its own, so without this it only
