@@ -13,6 +13,12 @@ This demo (based on [ifnesi's original](https://github.com/ifnesi/queues-for-kaf
 
 ![image](docs/dashboard-demo.png)
 
+> **Preview: dead-letter queue (DLQ) support.** This branch adds DLQ support for share groups
+> ([KIP-1191](https://cwiki.apache.org/confluence/display/KAFKA/KIP-1191%3A+Dead-letter+queues+for+share+groups)),
+> built against the `apache/kafka:4.4.0-rc4` release candidate ahead of the official AK 4.4 GA.
+> It's open for review and iteration via this PR before AK 4.4 actually ships — comment on the
+> PR with changes, and they'll land as further commits on this branch.
+
 ## Do you prefer Python?
 
 Check out the [Python version of this demo](queues-for-kafka-demo-python/README.md), which implements the same waiters/chefs/inventory-tracker scenario using `confluent-kafka-python` instead of the Java client.
@@ -118,8 +124,9 @@ docker exec -it kafka_qfk sh -c "
 "
 ```
 
-`DlqConsumer` (see [Reading the DLQ](#reading-the-dlq) below) reads either way: it always prints
-the context headers, and additionally prints the original order when its payload was copied.
+`DlqConsumer` (see [Reading the DLQ via CLI](#6-reading-the-dlq-via-cli-optional) below) reads
+either way: it always prints the context headers, and additionally prints the original order when
+its payload was copied.
 
 **Set this before any chef connects.** The DLQ config does not apply retroactively to a share
 group that's already active — if `chefs-share-group` already has consumers running when you set
@@ -147,10 +154,17 @@ Open http://localhost:8080 and you'll see an empty kitchen, no orders yet.
 
 On the dashboard, click the "Generate 40 Orders" button. The producer fires off 40 orders immediately to flood the kitchen, then keeps a steady stream going. Now, on the dashboard, you'll see chefs spin up to handle the backlog, then scale back down as the queue drains.
 
-### 5. Reading the DLQ
+### 5. See the DLQ in the Dashboard
 
-If you completed the [local Docker DLQ setup](#dead-letter-queue-dlq-setup) above, rejected and
-expired orders land on `dlq.orders-queue` instead of disappearing. Read them with:
+The dashboard tracks DLQ activity live. Queue Depth, Target Chefs, and Active Chefs are quick-glance
+chips right in the header, next to the action buttons. Further down, the Dead-Letter Queue section
+shows Rejected Orders, DLQ Records, and Delivery Exhausted side by side with a record-by-record
+inspector (Prev/Next through each DLQ record's headers and payload). Hover any label for an
+explanation of what it means.
+
+### 6. Reading the DLQ via CLI (optional)
+
+If you'd rather read the DLQ topic directly instead of through the dashboard:
 
 ```bash
 mvn exec:java -Dexec.mainClass=com.example.qtest.DlqConsumer
@@ -160,6 +174,20 @@ This prints each DLQ record's context headers (original topic/partition/offset, 
 delivery count, and rejection reason). If the group also has
 `errors.deadletterqueue.copy.record.enable=true` set, it additionally prints the original order
 that was copied onto the DLQ record.
+
+### 7. Trigger a poison pill
+
+Click "Send Poison Pill" on the dashboard. It produces one deliberately non-parseable record
+straight onto `orders-queue` — not a real order, just truncated JSON bytes. Whichever chef polls
+it next hits a genuine deserialization failure (`RecordDeserializationException`), which the chef
+catches and rejects by topic/partition/offset instead of crashing, since there's no parsed value
+to pass to the normal acknowledge path. It lands on the DLQ exactly like any other rejected
+record — open the inspector and you'll see the actual garbled payload bytes, not a clean order.
+
+The same raw record also reaches `InventoryConsumer`, a separate consumer group reading the same
+topic. It has no DLQ concept (it's a plain consumer, not a share consumer), so instead it catches
+the same exception and seeks past the bad offset, dropping it and continuing — both consumers
+survive the same bad message, via two different recovery paths.
 
 
 ## What to Look For
@@ -172,8 +200,13 @@ Share groups give consumers four ways to handle a message, which is new for Kafk
 |--------|--------------|
 | **Accept** | Done — message is acknowledged and leaves the queue |
 | **Release** | Put it back — another consumer will pick it up |
-| **Reject** | Discard it (bad data, unprocessable, etc.) — lands on the DLQ topic if the group has one configured, otherwise it's gone for good |
+| **Reject** | Discard it (a genuine poison pill — see [Trigger a poison pill](#7-trigger-a-poison-pill)) — lands on the DLQ topic if the group has one configured, otherwise it's gone for good |
 | **Renew** | Extend the time allowed for processing the message |
+
+In this demo, a chef only ever issues Reject for a real reason: a genuine poison pill. It's never
+an arbitrary coin flip on a well-formed order. The other real path into the DLQ is a record that
+exhausts its delivery attempts via repeated Release — the dashboard tracks this separately as
+Delivery Exhausted, alongside Rejected Orders and DLQ Records.
 
 ![image](docs/reject-order.png)
 
