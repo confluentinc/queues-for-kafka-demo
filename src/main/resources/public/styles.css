@@ -457,6 +457,19 @@ footer {
     grid-column: 1 / -1;
 }
 
+.dlq-cloud-notice {
+    border-left: 4px solid #ffd93d;
+    background: #fffbe6;
+    padding: 10px 14px;
+    margin-bottom: 12px;
+    border-radius: 4px;
+    font-size: 0.9rem;
+}
+
+.dlq-cloud-notice[hidden] {
+    display: none;
+}
+
 .dlq-combined {
     display: grid;
     grid-template-columns: 220px 1fr;

@@ -618,6 +618,15 @@ public class DashboardServer {
             return "{\"status\": \"ok\"}";
         });
 
+        // Lets the dashboard show a notice when running against Confluent Cloud (API key set),
+        // which does not support share-group DLQ yet.
+        Spark.get("/api/config", (req, res) -> {
+            res.type("application/json");
+            String key = System.getenv("CONFLUENT_API_KEY");
+            boolean cloud = key != null && !key.isEmpty();
+            return "{\"confluentCloud\": " + cloud + "}";
+        });
+
         Spark.get("/api/dlq/count", (req, res) -> {
             res.type("application/json");
             Map<String, Object> result = new HashMap<>();

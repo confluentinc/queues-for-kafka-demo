@@ -10,6 +10,15 @@ let dlqIndex = 0;
 document.addEventListener('DOMContentLoaded', () => {
     updateDashboard();
     setInterval(updateDashboard, UPDATE_INTERVAL);
+
+    // Show the DLQ notice when running against Confluent Cloud
+    fetch(`${API_BASE}/api/config`)
+        .then(r => r.json())
+        .then(cfg => {
+            const notice = document.getElementById('dlq-cloud-notice');
+            if (notice && cfg.confluentCloud) notice.hidden = false;
+        })
+        .catch(() => {});
     
     // Set up generate orders button
     const generateBtn = document.getElementById('generate-orders-btn');

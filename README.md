@@ -4,18 +4,15 @@
 
 [Queues for Kafka](https://cwiki.apache.org/confluence/display/KAFKA/KIP-932%3A+Queues+for+Kafka) (KIP-932) brings true queue semantics to Apache Kafka through **share groups**. Unlike traditional consumer groups where each partition is exclusively assigned to one consumer, share groups allow multiple consumers to process messages from the same partition concurrently, while Kafka still ensures each message is delivered to exactly one consumer at a time.
 
-This demo (based on [ifnesi's original](https://github.com/ifnesi/queues-for-kafka)) turns that into a restaurant kitchen:
+This demo (based on [ifnesi's original](https://github.com/ifnesi/queues-for-kafka)) uses a restaurant kitchen as a ficticious use case:
 
 - **Waiters** (producers) submit orders to a Kafka topic
 - **Chefs** (share group consumers) each grab orders off the queue
+- A **dead-letter queue** (DLQ) topic keeps the orders the chefs can't process (note, DLQ functionality is currently only available in Apache Kafka at this time.)
 - An **inventory tracker** (standard consumer) watches all orders flow through
-- A **dashboard** ties it all together with live scaling based on queue depth
+- A **dashboard** ties it all together with live scaling based on queue depth and a view of the DLQ
 
 ![image](docs/dashboard-demo.png)
-
-> **Dead-letter queue (DLQ) support.** This demo includes DLQ support for share groups
-> ([KIP-1191](https://cwiki.apache.org/confluence/display/KAFKA/KIP-1191%3A+Dead-letter+queues+for+share+groups)),
-> which ships in Apache Kafka 4.4.
 
 ## Do you prefer Python?
 
@@ -41,7 +38,7 @@ There are two ways to run this demo. The standard version quickly shows the capa
 
 To run the standard version, continue in this README. To run the KEDA version, jump to the [KEDA Autoscaling README](keda-scaler/README.md).
 
-### 1. Deploy a Confluent Cloud cluster
+### 1. Deploy a Kafka Cluster (Confluent Cloud is default)
 
 You need a Kafka cluster with Queues for Kafka enabled. The included Terraform creates a Dedicated cluster with a public endpoint and the API keys you'll use to connect.
 
@@ -59,7 +56,7 @@ terraform init
 terraform apply
 ```
 
-You'll be prompted for the key and secret you just created. Provisioning the Dedicated cluster can take some time. The topic you'll use, `orders-topic`, is created as part of the Terraform deployment as well. Once the provisioning finishes, load the connection details into your shell:
+You'll be prompted for the key and secret you just created. Provisioning the Dedicated cluster can take some time. The topic you'll use, `orders-queue`, is created as part of the Terraform deployment as well. Once the provisioning finishes, load the connection details into your shell:
 
 ```bash
 eval "$(terraform output -raw demo_env)"
@@ -72,12 +69,9 @@ cd ..
 ```
 
 <details>
-<summary><strong>Alternative: Local Kafka with Docker</strong></summary>
+<summary><strong>Alternative: Apache Kafka with Docker</strong></summary>
 
-No Confluent Cloud account? You can run against a local broker instead (some QfK features are Confluent Cloud-only).
-
-This demo runs against `apache/kafka:4.4.0`, the Apache Kafka 4.4.0 release, which includes
-the dead-letter queue support used in the steps below.
+No Confluent Cloud account? You can run against a local Apache Kafka broker instead (some QfK features are Confluent Cloud-only). Dead-letter queues for share groups ([KIP-1191](https://cwiki.apache.org/confluence/display/KAFKA/KIP-1191%3A+Dead-letter+queues+for+share+groups)) need Apache Kafka 4.4 or higher, so use the 4.4.0 image or a later one:
 
 ```bash
 docker run --name kafka_qfk --rm -p 9092:9092 apache/kafka:4.4.0
@@ -92,16 +86,7 @@ docker exec -it kafka_qfk sh -c "
 "
 ```
 
-No environment variables needed — the demo defaults to `localhost:9092`.
-
-#### Dead-letter queue (DLQ) setup
-
-[KIP-1191](https://cwiki.apache.org/confluence/display/KAFKA/KIP-1191%3A+Dead-letter+queues+for+share+groups)
-adds dead-letter queue support for share groups, available in AK 4.4. A rejected order, or one
-that exhausts its delivery attempts, is written to a DLQ topic instead of just disappearing.
-`share.version=2` (enabled above) turns this on.
-
-Create a DLQ topic, mark it as a valid DLQ destination, and point `chefs-share-group` at it:
+Then create the DLQ topic and point the chefs' share group at it:
 
 ```bash
 docker exec -it kafka_qfk sh -c "
@@ -111,25 +96,9 @@ docker exec -it kafka_qfk sh -c "
 "
 ```
 
-By default, DLQ records carry only context headers (topic, partition, offset, group, delivery
-count, rejection reason) — not the original order. To also copy the original order onto the DLQ
-record, set the group's `errors.deadletterqueue.copy.record.enable` config:
+Run this before you start any chefs.
 
-```bash
-docker exec -it kafka_qfk sh -c "
-  /opt/kafka/bin/kafka-configs.sh --bootstrap-server localhost:9092 --alter --entity-type groups --entity-name chefs-share-group --add-config errors.deadletterqueue.copy.record.enable=true
-"
-```
-
-`DlqConsumer` (see [Reading the DLQ via CLI](#6-reading-the-dlq-via-cli-optional) below) reads
-either way: it always prints the context headers, and additionally prints the original order when
-its payload was copied.
-
-**Set this before any chef connects.** The DLQ config does not apply retroactively to a share
-group that's already active — if `chefs-share-group` already has consumers running when you set
-`errors.deadletterqueue.topic.name`, rejected orders keep disappearing with no error and no DLQ
-record, even though `kafka-configs.sh --describe` shows the config is set. If you already started
-chefs, stop them first so the group empties, then start them again after configuring the DLQ.
+No environment variables needed — the demo defaults to `localhost:9092`.
 
 </details>
 
@@ -137,15 +106,6 @@ chefs, stop them first so the group empties, then start them again after configu
 
 ```bash
 mvn clean compile
-```
-
-The demo builds against the Apache Kafka 4.4.0 client, which is what you want when the broker is
-Apache Kafka 4.4 and you are using the DLQ steps above. Confluent Platform 8.3 and Confluent Cloud
-do not have DLQ for share groups yet. To run the demo without DLQ against either of them, build
-with a 4.2 or later client instead:
-
-```bash
-mvn clean compile -Dkafka.version=4.2.0
 ```
 
 ### 3. Start the Dashboard
@@ -160,40 +120,9 @@ Open http://localhost:8080 and you'll see an empty kitchen, no orders yet.
 
 On the dashboard, click the "Generate 40 Orders" button. The producer fires off 40 orders immediately to flood the kitchen, then keeps a steady stream going. Now, on the dashboard, you'll see chefs spin up to handle the backlog, then scale back down as the queue drains.
 
-### 5. See the DLQ in the Dashboard
+### 5. Send a Poison Pill
 
-The dashboard tracks DLQ activity live. Queue Depth, Target Chefs, and Active Chefs are quick-glance
-chips right in the header, next to the action buttons. Further down, the Dead-Letter Queue section
-shows Rejected Orders, DLQ Records, and Delivery Exhausted side by side with a record-by-record
-inspector (Prev/Next through each DLQ record's headers and payload). Hover any label for an
-explanation of what it means.
-
-### 6. Reading the DLQ via CLI (optional)
-
-If you'd rather read the DLQ topic directly instead of through the dashboard:
-
-```bash
-mvn exec:java -Dexec.mainClass=com.example.qtest.DlqConsumer
-```
-
-This prints each DLQ record's context headers (original topic/partition/offset, the group,
-delivery count, and rejection reason). If the group also has
-`errors.deadletterqueue.copy.record.enable=true` set, it additionally prints the original order
-that was copied onto the DLQ record.
-
-### 7. Trigger a poison pill
-
-Click "Send Poison Pill" on the dashboard. It produces one deliberately non-parseable record
-straight onto `orders-queue` — not a real order, just truncated JSON bytes. Whichever chef polls
-it next hits a genuine deserialization failure (`RecordDeserializationException`), which the chef
-catches and rejects by topic/partition/offset instead of crashing, since there's no parsed value
-to pass to the normal acknowledge path. It lands on the DLQ exactly like any other rejected
-record — open the inspector and you'll see the actual garbled payload bytes, not a clean order.
-
-The same raw record also reaches `InventoryConsumer`, a separate consumer group reading the same
-topic. It has no DLQ concept (it's a plain consumer, not a share consumer), so instead it catches
-the same exception and seeks past the bad offset, dropping it and continuing — both consumers
-survive the same bad message, via two different recovery paths.
+This step needs the DLQ setup from the Apache Kafka section above. On the dashboard, click the "Send Poison Pill" button. It sends one truncated JSON record. The next chef that reads it cannot deserialize it and rejects it. The record then appears in the dashboard's Dead-Letter Queue section. On Confluent Cloud, which doesn't support DLQ yet, the chef still rejects the record but it is dropped and that section stays empty.
 
 
 ## What to Look For
@@ -206,15 +135,18 @@ Share groups give consumers four ways to handle a message, which is new for Kafk
 |--------|--------------|
 | **Accept** | Done — message is acknowledged and leaves the queue |
 | **Release** | Put it back — another consumer will pick it up |
-| **Reject** | Discard it (a genuine poison pill — see [Trigger a poison pill](#7-trigger-a-poison-pill)) — lands on the DLQ topic if the group has one configured, otherwise it's gone for good |
+| **Reject** | Discard it (bad data, unprocessable, etc.), or send it to the DLQ if the group has one |
 | **Renew** | Extend the time allowed for processing the message |
 
-In this demo, a chef only ever issues Reject for a real reason: a genuine poison pill. It's never
-an arbitrary coin flip on a well-formed order. The other real path into the DLQ is a record that
-exhausts its delivery attempts via repeated Release — the dashboard tracks this separately as
-Delivery Exhausted, alongside Rejected Orders and DLQ Records.
+In this demo a chef only rejects a message that can't be processed, such as the poison pill. Chefs accept or release every well-formed order.
 
 ![image](docs/reject-order.png)
+
+### Dead-Letter Queue
+
+A message lands in the DLQ when a consumer rejects it or when it runs out of delivery attempts. The Dead-Letter Queue section of the dashboard shows each record's headers and payload.
+
+Optional: set `errors.deadletterqueue.copy.record.enable=true` on `chefs-share-group` to copy the original order onto each DLQ record, and run `mvn exec:java -Dexec.mainClass=com.example.qtest.DlqConsumer` to read the DLQ from the command line.
 
 ### Auto-Scaling
 
@@ -230,6 +162,8 @@ The demo runs both patterns on the same topic at the same time:
 
 - A **share group** (`chefs-share-group`) for queue-style processing — each order goes to one chef
 - A **standard consumer group** (`inventory-analytics-group`) for streaming — the inventory system sees every order
+
+The poison pill reaches both. The chef rejects it and it goes to the DLQ. The inventory tracker has no DLQ, so it skips the bad record and keeps reading.
 
 
 ## Teardown
@@ -251,4 +185,5 @@ docker stop kafka_qfk
 ## Learn More
 
 - [KIP-932: Queues for Kafka](https://cwiki.apache.org/confluence/display/KAFKA/KIP-932%3A+Queues+for+Kafka)
+- [KIP-1191: Dead-letter queues for share groups](https://cwiki.apache.org/confluence/display/KAFKA/KIP-1191%3A+Dead-letter+queues+for+share+groups)
 - [Confluent Developer Portal](https://developer.confluent.io)
