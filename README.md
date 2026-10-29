@@ -4,12 +4,13 @@
 
 [Queues for Kafka](https://cwiki.apache.org/confluence/display/KAFKA/KIP-932%3A+Queues+for+Kafka) (KIP-932) brings true queue semantics to Apache Kafka through **share groups**. Unlike traditional consumer groups where each partition is exclusively assigned to one consumer, share groups allow multiple consumers to process messages from the same partition concurrently, while Kafka still ensures each message is delivered to exactly one consumer at a time.
 
-This demo (based on [ifnesi's original](https://github.com/ifnesi/queues-for-kafka)) turns that into a restaurant kitchen:
+This demo (based on [ifnesi's original](https://github.com/ifnesi/queues-for-kafka)) uses a restaurant kitchen as a fictitious use case:
 
 - **Waiters** (producers) submit orders to a Kafka topic
 - **Chefs** (share group consumers) each grab orders off the queue
+- A **dead-letter queue** (DLQ) topic keeps the orders the chefs can't process (note, DLQ functionality is currently only available in Apache Kafka at this time.)
 - An **inventory tracker** (standard consumer) watches all orders flow through
-- A **dashboard** ties it all together with live scaling based on queue depth
+- A **dashboard** ties it all together with live scaling based on queue depth and a view of the DLQ
 
 ![image](docs/dashboard-demo.png)
 
@@ -37,7 +38,7 @@ There are two ways to run this demo. The standard version quickly shows the capa
 
 To run the standard version, continue in this README. To run the KEDA version, jump to the [KEDA Autoscaling README](keda-scaler/README.md).
 
-### 1. Deploy a Confluent Cloud cluster
+### 1. Deploy a Kafka Cluster (Confluent Cloud is default)
 
 You need a Kafka cluster with Queues for Kafka enabled. The included Terraform creates a Dedicated cluster with a public endpoint and the API keys you'll use to connect.
 
@@ -55,7 +56,7 @@ terraform init
 terraform apply
 ```
 
-You'll be prompted for the key and secret you just created. Provisioning the Dedicated cluster can take some time. The topic you'll use, `orders-topic`, is created as part of the Terraform deployment as well. Once the provisioning finishes, load the connection details into your shell:
+You'll be prompted for the key and secret you just created. Provisioning the Dedicated cluster can take some time. The topic you'll use, `orders-queue`, is created as part of the Terraform deployment as well. Once the provisioning finishes, load the connection details into your shell:
 
 ```bash
 eval "$(terraform output -raw demo_env)"
@@ -68,24 +69,36 @@ cd ..
 ```
 
 <details>
-<summary><strong>Alternative: Local Kafka with Docker</strong></summary>
+<summary><strong>Alternative: Apache Kafka with Docker</strong></summary>
 
-No Confluent Cloud account? You can run against a local broker instead (some QfK features are Confluent Cloud-only).
+No Confluent Cloud account? You can run against a local Apache Kafka broker instead (some QfK features are Confluent Cloud-only). Dead-letter queues for share groups ([KIP-1191](https://cwiki.apache.org/confluence/display/KAFKA/KIP-1191%3A+Dead-letter+queues+for+share+groups)) need Apache Kafka 4.4 or higher, so use the 4.4.0 image or a later one:
 
 ```bash
-docker run --name kafka_qfk --rm -p 9092:9092 apache/kafka:4.2.0
+docker run --name kafka_qfk --rm -p 9092:9092 apache/kafka:4.4.0
 ```
 
 In a new terminal, enable share groups and create the topic:
 
 ```bash
 docker exec -it kafka_qfk sh -c "
-  /opt/kafka/bin/kafka-features.sh --bootstrap-server localhost:9092 upgrade --feature share.version=1 &&
+  /opt/kafka/bin/kafka-features.sh --bootstrap-server localhost:9092 upgrade --feature share.version=2 &&
   /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --topic orders-queue --partitions 1
 "
 ```
 
-No environment variables needed — the demo defaults to `localhost:9092`.
+Then create the DLQ topic and point the chefs' share group at it:
+
+```bash
+docker exec -it kafka_qfk sh -c "
+  /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --topic dlq.orders-queue --partitions 1 &&
+  /opt/kafka/bin/kafka-configs.sh --bootstrap-server localhost:9092 --alter --entity-type topics --entity-name dlq.orders-queue --add-config errors.deadletterqueue.group.enable=true &&
+  /opt/kafka/bin/kafka-configs.sh --bootstrap-server localhost:9092 --alter --entity-type groups --entity-name chefs-share-group --add-config errors.deadletterqueue.topic.name=dlq.orders-queue
+"
+```
+
+Run this before you start the dashboard.
+
+No environment variables needed — the demo defaults to `localhost:9092`. If you ran the Terraform step in this terminal, unset `BOOTSTRAP_SERVERS`, `CONFLUENT_API_KEY` and `CONFLUENT_API_SECRET` first, or the demo will connect to Confluent Cloud instead.
 
 </details>
 
@@ -107,6 +120,10 @@ Open http://localhost:8080 and you'll see an empty kitchen, no orders yet.
 
 On the dashboard, click the "Generate 40 Orders" button. The producer fires off 40 orders immediately to flood the kitchen, then keeps a steady stream going. Now, on the dashboard, you'll see chefs spin up to handle the backlog, then scale back down as the queue drains.
 
+### 5. Send a Poison Pill
+
+This step needs the DLQ setup from the Apache Kafka section above. On the dashboard, click the "Send Poison Pill" button. It sends one truncated JSON record. The next chef that reads it cannot deserialize it and rejects it. The record appears in the dashboard's Dead-Letter Queue section within about 20 seconds. On Confluent Cloud, which doesn't support DLQ yet, the chef still rejects the record but it is dropped and that section stays empty.
+
 
 ## What to Look For
 
@@ -118,10 +135,18 @@ Share groups give consumers four ways to handle a message, which is new for Kafk
 |--------|--------------|
 | **Accept** | Done — message is acknowledged and leaves the queue |
 | **Release** | Put it back — another consumer will pick it up |
-| **Reject** | Discard it (bad data, unprocessable, etc.) |
+| **Reject** | Discard it (bad data, unprocessable, etc.), or send it to the DLQ if the group has one |
 | **Renew** | Extend the time allowed for processing the message |
 
+In this demo a chef only rejects a message that can't be processed, such as the poison pill. Chefs accept or release every well-formed order.
+
 ![image](docs/reject-order.png)
+
+### Dead-Letter Queue
+
+A message lands in the DLQ when a consumer rejects it or when it runs out of delivery attempts. The Dead-Letter Queue section of the dashboard shows each record's headers and payload.
+
+Optional: set `errors.deadletterqueue.copy.record.enable=true` on `chefs-share-group` to copy the original order onto each DLQ record, and run `mvn exec:java -Dexec.mainClass=com.example.qtest.DlqConsumer` to read the DLQ from the command line.
 
 ### Auto-Scaling
 
@@ -137,6 +162,8 @@ The demo runs both patterns on the same topic at the same time:
 
 - A **share group** (`chefs-share-group`) for queue-style processing — each order goes to one chef
 - A **standard consumer group** (`inventory-analytics-group`) for streaming — the inventory system sees every order
+
+The poison pill reaches both. The chef rejects it and it goes to the DLQ. The inventory tracker has no DLQ, so it skips the bad record and keeps reading.
 
 
 ## Teardown
@@ -158,4 +185,5 @@ docker stop kafka_qfk
 ## Learn More
 
 - [KIP-932: Queues for Kafka](https://cwiki.apache.org/confluence/display/KAFKA/KIP-932%3A+Queues+for+Kafka)
+- [KIP-1191: Dead-letter queues for share groups](https://cwiki.apache.org/confluence/display/KAFKA/KIP-1191%3A+Dead-letter+queues+for+share+groups)
 - [Confluent Developer Portal](https://developer.confluent.io)

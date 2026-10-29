@@ -18,6 +18,12 @@
                 <button id="restock-btn" class="action-btn restock-btn">
                     📦 Restock Inventory
                 </button>
+                <button id="poison-pill-btn" class="action-btn poison-btn">
+                    💀 Send Poison Pill
+                </button>
+            </div>
+            <div id="header-metrics-container" class="header-metrics">
+                <!-- Queue Depth / Target Chefs / Active Chefs chips will be populated here -->
             </div>
         </header>
 
@@ -38,11 +44,19 @@
                 </div>
             </section>
 
-            <!-- Auto-Scaling Section -->
-            <section class="autoscale-section">
-                <h2>🤖 Auto-Scaling Status</h2>
-                <div id="autoscale-container" class="autoscale-info">
-                    <!-- Auto-scaling status will be populated here -->
+            <!-- Dead-Letter Queue Section: stats and inspector side by side -->
+            <section class="dlq-section">
+                <h2>💀 Dead-Letter Queue</h2>
+                <div id="dlq-cloud-notice" class="dlq-cloud-notice" hidden>
+                    Dead-letter queues for share groups are not yet available on Confluent Cloud. Rejected orders are dropped and this section stays empty. To see the DLQ, run the demo against Apache Kafka 4.4 or higher.
+                </div>
+                <div class="dlq-combined">
+                    <div id="dlq-stats-container" class="dlq-stats-column">
+                        <!-- Rejected Orders / DLQ Records stat cards will be populated here -->
+                    </div>
+                    <div id="dlq-inspector-container" class="dlq-inspector-column">
+                        <!-- DLQ record inspector will be populated here -->
+                    </div>
                 </div>
             </section>
         </div>

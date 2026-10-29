@@ -3,11 +3,22 @@ const UPDATE_INTERVAL = 1000; // Update every second to match metric pipeline
 
 let inventoryData = {};
 let chefsData = [];
+let dlqRecords = [];
+let dlqIndex = 0;
 
 // Initialize dashboard
 document.addEventListener('DOMContentLoaded', () => {
     updateDashboard();
     setInterval(updateDashboard, UPDATE_INTERVAL);
+
+    // Show the DLQ notice when running against Confluent Cloud
+    fetch(`${API_BASE}/api/config`)
+        .then(r => r.json())
+        .then(cfg => {
+            const notice = document.getElementById('dlq-cloud-notice');
+            if (notice && cfg.confluentCloud) notice.hidden = false;
+        })
+        .catch(() => {});
     
     // Set up generate orders button
     const generateBtn = document.getElementById('generate-orders-btn');
@@ -19,6 +30,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const restockBtn = document.getElementById('restock-btn');
     if (restockBtn) {
         restockBtn.addEventListener('click', restockInventory);
+    }
+
+    // Set up poison pill button
+    const poisonBtn = document.getElementById('poison-pill-btn');
+    if (poisonBtn) {
+        poisonBtn.addEventListener('click', sendPoisonPill);
     }
 });
 
@@ -97,48 +114,6 @@ async function generateOrders() {
     }
 }
 
-async function addChef() {
-    try {
-        const response = await fetch(`${API_BASE}/api/scaling/add-chef`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
-        });
-        
-        if (!response.ok) {
-            const error = await response.json();
-            console.error('Failed to add chef:', error.error);
-            return;
-        }
-        
-        await updateDashboard();
-    } catch (error) {
-        console.error('Error adding chef:', error);
-    }
-}
-
-async function removeChef() {
-    try {
-        const response = await fetch(`${API_BASE}/api/scaling/remove-chef`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
-        });
-        
-        if (!response.ok) {
-            const error = await response.json();
-            console.error('Failed to remove chef:', error.error);
-            return;
-        }
-        
-        await updateDashboard();
-    } catch (error) {
-        console.error('Error removing chef:', error);
-    }
-}
-
-// Expose manual scaling functions to global scope for onclick handlers
-window.addChef = addChef;
-window.removeChef = removeChef;
-
 async function restockInventory() {
     const btn = document.getElementById('restock-btn');
     if (!btn) return;
@@ -191,6 +166,53 @@ async function restockInventory() {
             btn.classList.remove('error');
             btn.disabled = false;
         }, 2000);
+    }
+}
+
+async function sendPoisonPill() {
+    const btn = document.getElementById('poison-pill-btn');
+    if (!btn) return;
+
+    btn.disabled = true;
+    const originalText = btn.textContent;
+    btn.textContent = '⏳ Sending...';
+    btn.classList.add('loading');
+
+    try {
+        const response = await fetch(`${API_BASE}/api/orders/poison-pill`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || result.status === 'error') {
+            throw new Error(result.error || 'Failed to send poison pill');
+        }
+
+        btn.textContent = `💀 Sent to offset ${result.offset}`;
+        btn.classList.remove('loading');
+        btn.classList.add('success');
+
+        await updateDashboard();
+
+        setTimeout(() => {
+            btn.textContent = originalText;
+            btn.classList.remove('success');
+            btn.disabled = false;
+        }, 3000);
+
+    } catch (error) {
+        console.error('Error sending poison pill:', error);
+        btn.textContent = '❌ Failed - Try Again';
+        btn.classList.remove('loading');
+        btn.classList.add('error');
+
+        setTimeout(() => {
+            btn.textContent = originalText;
+            btn.classList.remove('error');
+            btn.disabled = false;
+        }, 3000);
     }
 }
 
@@ -345,113 +367,187 @@ function updateLastUpdateTime() {
 
 async function updateAutoScale() {
     try {
-        const response = await fetch(`${API_BASE}/api/autoscale`);
-        if (!response.ok) throw new Error('Failed to fetch auto-scale status');
-        
-        const autoscaleData = await response.json();
+        const [autoscaleResponse, dlqResponse] = await Promise.all([
+            fetch(`${API_BASE}/api/autoscale`),
+            fetch(`${API_BASE}/api/dlq/records`)
+        ]);
+        if (!autoscaleResponse.ok) throw new Error('Failed to fetch auto-scale status');
+        if (!dlqResponse.ok) throw new Error('Failed to fetch DLQ records');
+
+        const autoscaleData = await autoscaleResponse.json();
+        updateDlqRecords(await dlqResponse.json());
         renderAutoScale(autoscaleData);
+        renderDlqStats(autoscaleData.rejectedOrders !== undefined ? autoscaleData.rejectedOrders : 0, dlqRecords);
+        renderDlqInspector();
     } catch (error) {
         console.error('Error fetching auto-scale status:', error);
-        // Show error in UI
-        const container = document.getElementById('autoscale-container');
-        if (container) {
-            container.innerHTML = '<div class="loading">Error loading auto-scale status</div>';
-        }
+    }
+}
+
+function updateDlqRecords(newRecords) {
+    // Keep the inspector pointed at the same record (by dlqOffset) across refreshes.
+    const currentOffset = dlqRecords[dlqIndex] ? dlqRecords[dlqIndex].dlqOffset : undefined;
+    dlqRecords = newRecords;
+    if (dlqRecords.length === 0) {
+        dlqIndex = 0;
+    } else {
+        const sameOffsetIndex = dlqRecords.findIndex(r => r.dlqOffset === currentOffset);
+        dlqIndex = sameOffsetIndex >= 0 ? sameOffsetIndex : dlqRecords.length - 1;
     }
 }
 
 function renderAutoScale(data) {
-    const container = document.getElementById('autoscale-container');
-    if (!container) {
-        console.warn('autoscale-container not found in DOM');
+    const headerMetricsContainer = document.getElementById('header-metrics-container');
+    if (!headerMetricsContainer) {
+        console.warn('header-metrics-container not found in DOM');
         return;
     }
 
     if (data.enabled === false) {
-        container.innerHTML = '<div class="loading">Auto-scaling is disabled</div>';
+        headerMetricsContainer.innerHTML = '';
         return;
     }
 
     const queueDepth = data.queueDepth !== undefined ? data.queueDepth : 0;
     const activeChefs = data.activeChefs !== undefined ? data.activeChefs : 0;
     const targetChefs = data.targetChefs !== undefined ? data.targetChefs : 0;
-    const rejectedOrders = data.rejectedOrders !== undefined ? data.rejectedOrders : 0;
-    const chefNames = data.activeChefNames || [];
     const manualMode = data.manualMode === true;
-    const maxChefs = data.maxChefs || 4;
-    const minChefs = data.minChefs || 1;
 
     const kedaMode = data.kedaMode === true;
     const depthClass = queueDepth >= 4 ? 'high-queue' : queueDepth >= 2 ? 'medium-queue' : 'low-queue';
-    const scalingStatus = activeChefs < targetChefs ? 'scaling-up' : activeChefs > targetChefs ? 'scaling-down' : 'stable';
-    const rejectedClass = rejectedOrders > 0 ? 'rejected-orders' : '';
 
-    // Manual scaling buttons (only shown in manual mode, not KEDA mode)
-    const manualControls = manualMode && !kedaMode ? `
-        <div class="manual-scaling-controls">
-            <div class="manual-scaling-label">👆 Manual Scaling</div>
-            <div class="manual-scaling-buttons">
-                <button class="scale-btn remove-chef-btn" onclick="removeChef()" ${activeChefs <= minChefs ? 'disabled' : ''}>
-                    ➖ Remove Chef
-                </button>
-                <button class="scale-btn add-chef-btn" onclick="addChef()" ${activeChefs >= maxChefs ? 'disabled' : ''}>
-                    ➕ Add Chef
-                </button>
-            </div>
-        </div>
-    ` : '';
-
-    const threshold = data.threshold || 4;
-
-    // Target chefs card content depends on mode
-    let targetLabel, targetValue, targetDescription;
+    // Target chefs chip content depends on mode
+    let targetLabel, targetValue;
     if (kedaMode) {
         targetLabel = 'Target Chefs';
         targetValue = targetChefs;
-        targetDescription = `KEDA scaling`;
     } else if (manualMode) {
         targetLabel = 'Mode';
         targetValue = '👆';
-        targetDescription = 'Manual scaling';
     } else {
         targetLabel = 'Target Chefs';
         targetValue = targetChefs;
-        targetDescription = 'Desired count';
     }
 
-    // Update the container with new data
-    container.innerHTML = `
-        <div class="autoscale-stats">
-            <div class="stat-card ${depthClass}">
-                <div class="stat-label">Queue Depth</div>
-                <div class="stat-value">${queueDepth}</div>
-                <div class="stat-description">Unprocessed messages</div>
-            </div>
-            <div class="stat-card ${manualMode ? '' : scalingStatus}">
-                <div class="stat-label">${targetLabel}</div>
-                <div class="stat-value">${targetValue}</div>
-                <div class="stat-description">${targetDescription}</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">Active Chefs</div>
-                <div class="stat-value">${activeChefs}</div>
-                <div class="stat-description">Currently running</div>
-            </div>
-            <div class="stat-card ${rejectedClass}">
-                <div class="stat-label">Rejected Orders</div>
-                <div class="stat-value">${rejectedOrders}</div>
-                <div class="stat-description">Rejected</div>
-            </div>
+    // Live summary chips live in the header, next to the action buttons
+    headerMetricsContainer.innerHTML = `
+        <div class="header-metric-chip ${depthClass}">
+            <div class="header-metric-label">Queue Depth</div>
+            <div class="header-metric-value">${queueDepth}</div>
         </div>
-        ${manualControls}
-        ${chefNames.length > 0 ? `
-            <div class="chef-names">
-                <div class="chef-names-label">Active Chef Names:</div>
-                <div class="chef-names-list">${chefNames.map(name => `<span class="chef-name-tag">${name}</span>`).join('')}</div>
-            </div>
-        ` : ''}
+        <div class="header-metric-chip">
+            <div class="header-metric-label">${targetLabel}</div>
+            <div class="header-metric-value">${targetValue}</div>
+        </div>
+        <div class="header-metric-chip">
+            <div class="header-metric-label">Active Chefs</div>
+            <div class="header-metric-value">${activeChefs}</div>
+        </div>
     `;
 }
+
+function escapeHtml(value) {
+    if (value === null || value === undefined) return '';
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function renderDlqStats(rejectedOrders, dlqRecordsList) {
+    const container = document.getElementById('dlq-stats-container');
+    if (!container) return;
+
+    const dlqCount = dlqRecordsList.length;
+    const exhaustedCount = dlqRecordsList.filter(r => r.reason && !r.reason.toLowerCase().includes('rejected by client')).length;
+
+    const rejectedClass = rejectedOrders > 0 ? 'rejected-orders' : '';
+    const dlqClass = dlqCount > 0 ? 'rejected-orders' : '';
+    const exhaustedClass = exhaustedCount > 0 ? 'rejected-orders' : '';
+
+    container.innerHTML = `
+        <div class="stat-card ${rejectedClass}">
+            <div class="stat-label has-tooltip" title="Orders where a chef issued an explicit Reject. Orders that instead ran out of delivery attempts via repeated Release also land in the DLQ, but aren't counted here — see DLQ Records for the true total.">Rejected Orders</div>
+            <div class="stat-value">${rejectedOrders}</div>
+            <div class="stat-description">Rejected</div>
+        </div>
+        <div class="stat-card ${dlqClass}">
+            <div class="stat-label has-tooltip" title="Total records written to the dlq.orders-queue topic. Includes both explicit Rejects and orders that exhausted their delivery attempts via repeated Release.">DLQ Records</div>
+            <div class="stat-value">${dlqCount}</div>
+            <div class="stat-description">Landed in the dead-letter queue</div>
+        </div>
+        <div class="stat-card ${exhaustedClass}">
+            <div class="stat-label has-tooltip" title="DLQ records whose reason was 'delivery count exceeded the threshold' — ran out of delivery attempts via repeated Release, never an explicit Reject.">Delivery Exhausted</div>
+            <div class="stat-value">${exhaustedCount}</div>
+            <div class="stat-description">Timed out, never rejected</div>
+        </div>
+    `;
+}
+
+function renderDlqInspector() {
+    const container = document.getElementById('dlq-inspector-container');
+    if (!container) return;
+
+    if (dlqRecords.length === 0) {
+        container.innerHTML = '<div class="loading">No DLQ records yet. Configure a DLQ topic on chefs-share-group and reject or exhaust some orders to see them here.</div>';
+        return;
+    }
+
+    const record = dlqRecords[dlqIndex];
+    const orderLabel = escapeHtml(record.orderId || '(unparsed)');
+    const payloadHtml = record.hasPayload
+        ? `<div class="status-value status-accept">Order ${orderLabel} — ${record.orderItemCount || 0} item(s) copied</div>`
+        : `<div class="status-value status-reject">None — group has errors.deadletterqueue.copy.record.enable=false (headers only)</div>`;
+
+    container.innerHTML = `
+        <div class="dlq-nav">
+            <button class="scale-btn remove-chef-btn" onclick="dlqPrev()" ${dlqIndex <= 0 ? 'disabled' : ''}>⬅ Prev</button>
+            <div class="dlq-nav-position">Record ${dlqIndex + 1} of ${dlqRecords.length}</div>
+            <button class="scale-btn add-chef-btn" onclick="dlqNext()" ${dlqIndex >= dlqRecords.length - 1 ? 'disabled' : ''}>Next ➡</button>
+        </div>
+        <div class="dlq-record-detail">
+            <div class="chef-status">
+                <div class="status-label has-tooltip" title="Where the original order lived before it was dead-lettered — topic / partition / offset on orders-queue. Not this DLQ record's own position.">Original Topic / Partition / Offset:</div>
+                <div class="status-value">${escapeHtml(record.originalTopic) || '-'} / ${escapeHtml(record.originalPartition) || '-'} / ${escapeHtml(record.originalOffset) || '-'}</div>
+            </div>
+            <div class="chef-status">
+                <div class="status-label has-tooltip" title="The share group whose consumer caused this record to be dead-lettered.">Group:</div>
+                <div class="status-value">${escapeHtml(record.group) || '-'}</div>
+            </div>
+            <div class="chef-status">
+                <div class="status-label has-tooltip" title="How many times the broker attempted to deliver this record to a consumer before it landed in the DLQ.">Delivery Count:</div>
+                <div class="status-value">${escapeHtml(record.deliveryCount) || '-'}</div>
+            </div>
+            <div class="chef-status">
+                <div class="status-label has-tooltip" title="Why this record was dead-lettered, reported by the Kafka broker (KIP-1191): either an explicit Reject, or delivery attempts exhausted after repeated Release.">Reason:</div>
+                <div class="status-value">${escapeHtml(record.reason) || '-'}</div>
+            </div>
+            <div class="chef-status">
+                <div class="status-label has-tooltip" title="Whether the original order was copied onto this DLQ record. Controlled by the share group's errors.deadletterqueue.copy.record.enable config — off by default.">Payload:</div>
+                ${payloadHtml}
+            </div>
+        </div>
+    `;
+}
+
+function dlqPrev() {
+    if (dlqIndex > 0) {
+        dlqIndex--;
+        renderDlqInspector();
+    }
+}
+
+function dlqNext() {
+    if (dlqIndex < dlqRecords.length - 1) {
+        dlqIndex++;
+        renderDlqInspector();
+    }
+}
+
+window.dlqPrev = dlqPrev;
+window.dlqNext = dlqNext;
 
 function showError(message) {
     const container = document.querySelector('.container');
