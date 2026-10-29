@@ -139,6 +139,15 @@ chefs, stop them first so the group empties, then start them again after configu
 mvn clean compile
 ```
 
+The demo builds against the Apache Kafka 4.4.0 client, which is what you want when the broker is
+Apache Kafka 4.4 and you are using the DLQ steps above. Confluent Platform 8.3 and Confluent Cloud
+do not have DLQ for share groups yet. To run the demo without DLQ against either of them, build
+with a 4.2 or later client instead:
+
+```bash
+mvn clean compile -Dkafka.version=4.2.0
+```
+
 ### 3. Start the Dashboard
 
 ```bash

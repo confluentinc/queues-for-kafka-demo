@@ -10,6 +10,7 @@
   <properties>
     <maven.compiler.source>17</maven.compiler.source>
     <maven.compiler.target>17</maven.compiler.target>
+    <kafka.version>4.4.0</kafka.version>
   </properties>
 
   <dependencies>
@@ -17,7 +18,7 @@
     <dependency>
       <groupId>org.apache.kafka</groupId>
       <artifactId>kafka-clients</artifactId>
-      <version>4.4.0</version>
+      <version>${kafka.version}</version>
     </dependency>
 
     <!-- Logging backend for SLF4J (logback-classic includes slf4j-api) -->
