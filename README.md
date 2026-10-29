@@ -13,11 +13,9 @@ This demo (based on [ifnesi's original](https://github.com/ifnesi/queues-for-kaf
 
 ![image](docs/dashboard-demo.png)
 
-> **Preview: dead-letter queue (DLQ) support.** This branch adds DLQ support for share groups
+> **Dead-letter queue (DLQ) support.** This demo includes DLQ support for share groups
 > ([KIP-1191](https://cwiki.apache.org/confluence/display/KAFKA/KIP-1191%3A+Dead-letter+queues+for+share+groups)),
-> built against the `apache/kafka:4.4.0-rc4` release candidate ahead of the official AK 4.4 GA.
-> It's open for review and iteration via this PR before AK 4.4 actually ships — comment on the
-> PR with changes, and they'll land as further commits on this branch.
+> which ships in Apache Kafka 4.4.
 
 ## Do you prefer Python?
 
@@ -78,12 +76,11 @@ cd ..
 
 No Confluent Cloud account? You can run against a local broker instead (some QfK features are Confluent Cloud-only).
 
-This demo currently runs against `apache/kafka:4.4.0-rc4`, an Apache Kafka 4.4.0 release
-candidate, so that the dead-letter queue steps below work ahead of the AK 4.4 GA. Once AK 4.4
-ships, this tag should be bumped to the GA image (e.g. `apache/kafka:4.4.0`).
+This demo runs against `apache/kafka:4.4.0`, the Apache Kafka 4.4.0 release, which includes
+the dead-letter queue support used in the steps below.
 
 ```bash
-docker run --name kafka_qfk --rm -p 9092:9092 apache/kafka:4.4.0-rc4
+docker run --name kafka_qfk --rm -p 9092:9092 apache/kafka:4.4.0
 ```
 
 In a new terminal, enable share groups and create the topic:
@@ -100,7 +97,7 @@ No environment variables needed — the demo defaults to `localhost:9092`.
 #### Dead-letter queue (DLQ) setup
 
 [KIP-1191](https://cwiki.apache.org/confluence/display/KAFKA/KIP-1191%3A+Dead-letter+queues+for+share+groups)
-adds dead-letter queue support for share groups, targeted at AK 4.4. A rejected order, or one
+adds dead-letter queue support for share groups, available in AK 4.4. A rejected order, or one
 that exhausts its delivery attempts, is written to a DLQ topic instead of just disappearing.
 `share.version=2` (enabled above) turns this on.
 
