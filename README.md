@@ -4,7 +4,7 @@
 
 [Queues for Kafka](https://cwiki.apache.org/confluence/display/KAFKA/KIP-932%3A+Queues+for+Kafka) (KIP-932) brings true queue semantics to Apache Kafka through **share groups**. Unlike traditional consumer groups where each partition is exclusively assigned to one consumer, share groups allow multiple consumers to process messages from the same partition concurrently, while Kafka still ensures each message is delivered to exactly one consumer at a time.
 
-This demo (based on [ifnesi's original](https://github.com/ifnesi/queues-for-kafka)) uses a restaurant kitchen as a ficticious use case:
+This demo (based on [ifnesi's original](https://github.com/ifnesi/queues-for-kafka)) uses a restaurant kitchen as a fictitious use case:
 
 - **Waiters** (producers) submit orders to a Kafka topic
 - **Chefs** (share group consumers) each grab orders off the queue
@@ -96,9 +96,9 @@ docker exec -it kafka_qfk sh -c "
 "
 ```
 
-Run this before you start any chefs.
+Run this before you start the dashboard.
 
-No environment variables needed — the demo defaults to `localhost:9092`.
+No environment variables needed — the demo defaults to `localhost:9092`. If you ran the Terraform step in this terminal, unset `BOOTSTRAP_SERVERS`, `CONFLUENT_API_KEY` and `CONFLUENT_API_SECRET` first, or the demo will connect to Confluent Cloud instead.
 
 </details>
 
@@ -122,7 +122,7 @@ On the dashboard, click the "Generate 40 Orders" button. The producer fires off 
 
 ### 5. Send a Poison Pill
 
-This step needs the DLQ setup from the Apache Kafka section above. On the dashboard, click the "Send Poison Pill" button. It sends one truncated JSON record. The next chef that reads it cannot deserialize it and rejects it. The record then appears in the dashboard's Dead-Letter Queue section. On Confluent Cloud, which doesn't support DLQ yet, the chef still rejects the record but it is dropped and that section stays empty.
+This step needs the DLQ setup from the Apache Kafka section above. On the dashboard, click the "Send Poison Pill" button. It sends one truncated JSON record. The next chef that reads it cannot deserialize it and rejects it. The record appears in the dashboard's Dead-Letter Queue section within about 20 seconds. On Confluent Cloud, which doesn't support DLQ yet, the chef still rejects the record but it is dropped and that section stays empty.
 
 
 ## What to Look For
