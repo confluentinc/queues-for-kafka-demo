@@ -13,11 +13,11 @@
   </properties>
 
   <dependencies>
-    <!-- Kafka 4.0 client (contains KafkaShareConsumer) -->
+    <!-- Kafka 4.4 client (contains KafkaShareConsumer) -->
     <dependency>
       <groupId>org.apache.kafka</groupId>
       <artifactId>kafka-clients</artifactId>
-      <version>4.2.0</version>
+      <version>4.4.0</version>
     </dependency>
 
     <!-- Logging backend for SLF4J (logback-classic includes slf4j-api) -->
